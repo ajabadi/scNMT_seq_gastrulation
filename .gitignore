@@ -1,0 +1,8 @@
+**/*.Rproj.user
+**/*.Rhistory
+**/*_cache
+**/*.Ruserdata
+*.gz
+.Rproj.user
+__archive
+__backup
