@@ -1,0 +1,177 @@
+---
+title: "Compare SCTransform and scran PCA clusters using given phenotypes"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(SingleCellExperiment)
+library(MultiAssayExperiment)
+library(here)
+library(ggplot2)
+library(mixOmics)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+source(here("src/source-utils.R"))
+```
+
+## Data
+
+```{r}
+sce_matching <- readRDS(here("output/sce-matching-1pct-cells-expressing.rds"))
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+```
+
+## Calculate PCA-based silhouette widths
+
+Function to perform PCA on normalied counts and find an optimum number of components that maximises the (distribution of) silhouette width:
+
+```{r}
+pca_normalised_counts <- function(norm_counts, group=gastru.mae$stage_lineage, ncomp="auto", comps_try = 10) {
+  
+  calc_opt_ncomp <- FALSE
+  if ( ncomp == "auto") {
+    calc_opt_ncomp <- TRUE
+    ncomp <- comps_try
+  }
+  pca_res <- mixOmics::pca(t(norm_counts), ncomp = ncomp)
+  
+  out <- list(pca_res = pca_res)
+  library(cluster)
+  
+  if (!calc_opt_ncomp) {
+    sils <- silhouette(x = as.integer(factor(group)), dist = dist(pca_res$variates$X[,ncomp]))[,"sil_width"]
+  } else{
+    
+    comp_opt <- 1
+    sils <- silhouette(x = as.integer(factor(group)), dist = dist(pca_res$variates$X[,comp_opt]))[,"sil_width"]
+    for (i in seq_len(ncomp)[-1]) {
+      sils_new <- silhouette(x = as.integer(factor(group)), dist = dist(pca_res$variates$X[,seq_len(i)]))[,"sil_width"]
+      
+      p_val <- t.test(sils_new, sils, alternative = "greater")$p.value
+      
+      if (p_val < 0.05) {
+        comp_opt <- i
+        sils <- sils_new
+      } else {
+        break()
+      }
+    }
+    out$ncomp_maxsilhouette = comp_opt
+  }
+  out$silhouette <- sils
+  
+  return(out)
+}
+```
+
+### scran
+
+```{r, eval=FALSE}
+scran_clusters <- pca_normalised_counts(norm_counts = logcounts(sce_matching),  group = gastru.mae$stage_lineage, ncomp = "auto")
+save(scran_clusters, file = here("output/scran_clusters.RData"))
+```
+```{r}
+load(here("output/scran_clusters.RData"))
+```
+
+```{r}
+## optimum ncomp
+scran_clusters$ncomp_maxsilhouette
+## median sil. width
+median(scran_clusters$silhouette)
+```
+
+### UMI correction using SCTransform
+
+Get UMI corrected logcounts so that the effects of cell UMI library size is regressed out in gene variance calculation:
+```{r, eval=FALSE}
+library(sctransform)
+counts_vst <- vst(as(counts(sce_matching), "dgCMatrix"),n_genes = NULL, min_cells = 0, return_cell_attr = TRUE, return_corrected_umi = TRUE)
+counts_umi_crrected <- as(counts_vst$umi_corrected, "matrix")
+## logcounts of UMI corrected data
+logcounts_umi_corrected <- log(counts_umi_crrected+1)
+saveRDS(logcounts_umi_corrected, file = here("data/gastrulation/rna/parsed/logcounts_umi_corrected_sce-matching-1pct-cells-expressing.rds"))
+```
+
+
+```{r}
+logcounts_umi_corrected <- readRDS(here("data/gastrulation/rna/parsed/logcounts_umi_corrected_sce-matching-1pct-cells-expressing.rds"))
+```
+
+## UMI corrected logcounts
+
+```{r, eval=FALSE}
+sct_clusters <- pca_normalised_counts(norm_counts = logcounts_umi_corrected,  group = gastru.mae$stage_lineage, ncomp = "auto")
+save(sct_clusters , file = here("output/sct_clusters.RData"))
+```
+```{r}
+load(here("output/sct_clusters.RData"))
+```
+
+```{r}
+sct_clusters$ncomp_maxsilhouette
+```
+```{r}
+sil_title <- function(values, caption) {
+  sprintf("%s: median = %s  -  mean = %s", caption, round(median(values), 3), round(mean(values), 3))
+}
+hist_values(sct_clusters$silhouette, fill_col = 19, x = "silhouette width", title = sil_title(values = sct_clusters$silhouette, caption = "SCTransform - UMI Corrected"))
+hist_values(scran_clusters$silhouette, fill_col = 19, x = "silhouette width", title =  sil_title(values = scran_clusters$silhouette, caption = "Scran - logcounts"))
+```
+
+### Pearson residuals
+
+```{r, eval=FALSE}
+sct_clusters_pearson_residuals <- pca_normalised_counts(norm_counts = counts_vst$y,  group = gastru.mae$stage_lineage, ncomp = "auto")
+save(sct_clusters_pearson_residuals , file = here("output/sct_clusters_pearson_residuals.RData"))
+```
+```{r}
+load(here("output/sct_clusters_pearson_residuals.RData"))
+```
+
+```{r}
+sct_clusters_pearson_residuals$ncomp_maxsilhouette
+```
+```{r}
+hist_values(sct_clusters_pearson_residuals$silhouette, fill_col = 19, x = "silhouette width", title = sil_title(values = sct_clusters_pearson_residuals$silhouette, caption = "SCTransform - Pearson residuals"))
+hist_values(scran_clusters$silhouette, fill_col = 19, x = "silhouette width", title =  sil_title(values = scran_clusters$silhouette, caption = "Scran - logcounts"))
+```
+
+## sample plots
+
+### sctranform - Pearson residuals
+```{r}
+plotIndiv(sct_clusters_pearson_residuals$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(1,2))
+plotIndiv(sct_clusters_pearson_residuals$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(1,3))
+plotIndiv(sct_clusters_pearson_residuals$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(3,4))
+```
+
+
+### scran
+```{r}
+plotIndiv(scran_clusters$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(1,2))
+plotIndiv(scran_clusters$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(1,3))
+plotIndiv(scran_clusters$pca_res, pch= 16, group = gastru.mae$stage_lineage, comp = c(3,4))
+```
+
+## Results:
+
+* scran-, umi-corrected- and pearson residual-normalised counts all yielded the best cluster quality (measured using silhouette width) using 4 componenets.
+* Pearson residuals yields a better median silhouette width for `stage_lineage`-based clusters (0.142) compared to other methods ( ~ 0).
+
+
+## add Pearson residuals to SCE
+
+```{r, eval=FALSE}
+assay(sce_matching, "pearson_residuals") <- counts_vst$y
+saveRDS(sce_matching, file = "../output/sce-matching-1pct-cells-expressing_pearson-residuals.rds")
+```

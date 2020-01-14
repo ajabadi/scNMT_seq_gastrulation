@@ -34,7 +34,7 @@ installer <- function(pkgs=c( "data.table", "magrittr", "mixOmics", "scater", "p
     setup_libPaths()
     
     ## to update old spartan packages in my R_libs
-    hpc_pkgs <- installed.packages(lib.loc = .libPaths()[1])[,c("Package") ]
+    hpc_pkgs <- installed.packages()[,c("Package") ]
     missing_pkgs <- setdiff(pkgs, hpc_pkgs)
     ## if a package on HPC is not updated
     missing_pkgs <- unique(c(missing_pkgs, reinstall))
@@ -71,16 +71,12 @@ installer <- function(pkgs=c( "data.table", "magrittr", "mixOmics", "scater", "p
     cat(paste0(succeeded, collapse = ", "))
     message(sprintf("\nalready installed:\n"))
     cat(paste0(installed, collapse = ", "))
+    cat("\n")
     
 }
 
-if (Sys.info()["user"] != "alabadi") {
-    installer(pkgs = pkgs)
-}
-
 ## ----------- quietly load packages ----------- ##
-
-load_pkgs <- function(pkg) {
+load_pkgs <- function(pkgs) {
     setup_libPaths()
     invisible(sapply(pkgs, function(x) suppressMessages(library(x, character.only = TRUE))))
 }
@@ -96,8 +92,12 @@ prj_dir <- "Projects/analysis/R/multiOmics/scNMT_seq_gatrulation" ## no trailing
 mac_dir <- file.path("/Users/alabadi", prj_dir)
 hpc_dir <- file.path("/data/cephfs/punim0613/AL", prj_dir) ## do mkdir --parents THIS on hpc
 mac_rsync_in <- "hpc/rsync" ## rsync back into this from hpc to avoid inadvertant deletions - relative to mac_dir - no slashes
-rsync_out_include = file.path(mac_dir, "hpc/include.txt")
-rsync_out_exclude = file.path(mac_dir, "hpc/exclude.txt")
+## included files when  mac -> hpc
+rsync_out_include = file.path(mac_dir, "hpc/include-out.txt")
+rsync_out_include = file.path(mac_dir, "hpc/include-in.txt")
+## excluded files when  mac -> hpc
+rsync_out_exclude = file.path(mac_dir, "hpc/exclude-out.txt")
+rsync_in_exclude = file.path(mac_dir, "hpc/exclude-in.txt")
 
 #' rsync local -> HPC from within R
 #' 
@@ -105,11 +105,12 @@ rsync_out_exclude = file.path(mac_dir, "hpc/exclude.txt")
 #'
 #' @param del pattern/files to delete
 #' @param ignore pattern/files to ignore
-rsync_out_exc <- function(del=FALSE, ignore=NULL) {
+rsync_out_exc <- function(del=FALSE, ignore=NULL, inc = NULL) {
     
     ignore <- ifelse(is.null(ignore), "", paste0(" --exclude=", sQuote2(ignore)))
     delit <- ifelse(del, " --delete ", " ")
-    cmd <- sprintf("rsync --recursive --verbose --update --progress --compress %s --exclude-from=%s %s %s/ ajabadi@spartan.hpc.unimelb.edu.au:%s/", delit, sQuote2(rsync_out_exclude), ignore, mac_dir, hpc_dir)
+    incs <- ifelse(is.null(inc), "", paste0(" --include=", sQuote2(inc), collapse = " "))
+    cmd <- sprintf("rsync --recursive --verbose --update --progress --compress %s %s --exclude-from=%s %s %s/ ajabadi@spartan.hpc.unimelb.edu.au:%s/", delit, incs , sQuote2(rsync_out_exclude), ignore, mac_dir, hpc_dir)
     system(cmd)
 }
 
@@ -119,12 +120,12 @@ rsync_out_exc <- function(del=FALSE, ignore=NULL) {
 #'
 #' @param del pattern/files to delete
 #' @param ignore pattern/files to ignore
-rsync_in_exc <- function(del=FALSE, ignore=NULL) {
+rsync_in_exc <- function(del=FALSE, ignore=NULL, inc = NULL) {
     
     ignore <- ifelse(is.null(ignore), "", paste0(" --exclude=", sQuote2(ignore)))
     delit <- ifelse(del, " --delete ", " ")
-    cmd <- sprintf("rsync -r -v%s --exclude-from='./hpc/exclude-hpc.txt'%s ajabadi@spartan.hpc.unimelb.edu.au:%s/ %s/hpc/rsync/", delit, ignore, hpc_dir, mac_dir)
-    # cmd <- sprintf("rsync -r -v%s--files-from='./hpc/include.txt' ajabadi@spartan.hpc.unimelb.edu.au:%s %s/spartan", delit, mac_dir, hpc_dir)
+    incs <- ifelse(is.null(inc), "", paste0(" --include=", sQuote2(inc), collapse = " "))
+    cmd <- sprintf("rsync --recursive --verbose --progress --compress %s %s --exclude-from=%s %s ajabadi@spartan.hpc.unimelb.edu.au:%s/ %s/", delit, incs , sQuote2(rsync_in_exclude), ignore, hpc_dir, mac_dir)
     system(cmd)
 }
 
@@ -190,7 +191,7 @@ saveRDS2 <- function(object, file, force=FALSE, suffix=NULL, log=NULL, ...){
         
         file_dir <- dirname(filePath)
         file_name <- tools::file_path_sans_ext(basename(filePath))
-        file_ext<- tools::file_ext(filePath)
+        file_ext <- tools::file_ext(filePath)
         return(list(parent=file_dir, base=file_name, ext=file_ext))
     }
     
@@ -234,4 +235,9 @@ saveRDS2 <- function(object, file, force=FALSE, suffix=NULL, log=NULL, ...){
     }
     
     saveRDS(object=object, file=file_sfx,...)
+}
+
+## ----------- paste parameters used in Rmd yaml for logging ----------- ##
+paste_params <- function(params) {
+    paste0(paste0(names(params), ": "), paste0(params), collapse = " ; ")
 }

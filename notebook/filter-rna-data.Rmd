@@ -1,0 +1,98 @@
+---
+title: "Filter and order RNA data based on feature variance"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(SingleCellExperiment)
+library(here)
+library(ggplot2)
+library(scater)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+```
+
+## rna data
+
+The `rna` assay is simply the `logcounts(sce)` so no filtering so far. We need to filter near-zero-variance genes:
+
+### read the matching SCE
+
+Read the SCE with matching cells (copied from __Hackathon/data folder):
+
+```{r}
+sce_matching <- readRDS(here("data/gastrulation/rna/parsed/SingleCellExperiment_matching-cells.rds"))
+dim(sce_matching)
+```
+
+### histpgram of % of cells not expressing every given gene
+
+```{r}
+hist(rowData(sce_matching)$pct_dropout_by_counts, main = "Histogram of percent of cell dropouts for genes")
+```
+
+### mean expression histogram
+
+Look at mean expression histogram for all genes:
+```{r}
+hist_mean_exp <- function(sce, fill_col = "#3381A7") {
+  rowdata <- as.data.frame(rowData(sce))
+  ggplot(rowdata) + geom_histogram(aes(log10_mean_counts), bins = 50, fill = fill_col) + theme_bw()
+}
+
+hist_mean_exp(sce_matching)
+```
+
+### table of gene dropout rates
+
+```{r}
+table_dropouts <- function(sce, pct_cells_expresing = c(0, 1, 5, 10)) {
+  out <- data.frame(pct_cells_expressing = pct_cells_expresing, Number_of_genes = NA)
+  out$Number_of_genes <- sapply(pct_cells_expresing, function(x){
+    sum(rowData(sce)$pct_dropout_by_counts <= 100-x)
+  })
+  out
+}
+
+table_dropouts(sce_matching)
+
+```
+
+
+### genes to be expressed in at least 1% of cells
+
+```{r}
+sce_matching <- sce_matching[rowData(sce_matching)$pct_dropout_by_counts <= 99 ,]
+dim(sce_matching)
+```
+
+### mean expression histogram after filtering
+
+```{r}
+hist_mean_exp(sce_matching)
+```
+
+A great number of genes with low mean expression are potentially affected by drop-out.
+
+### Output
+
+Save the output expression data:
+
+```{r, eval=FALSE}
+saveRDS(sce_matching, file = here("output/sce-matching-1pct-cells-expressing.rds"))
+```
+
+
+```{r, eval=FALSE}
+knitr::purl("filter-rna-data.Rmd")
+```
+
