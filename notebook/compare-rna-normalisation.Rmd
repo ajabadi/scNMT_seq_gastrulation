@@ -173,5 +173,5 @@ plotIndiv(scran_clusters$pca_res, pch= 16, group = gastru.mae$stage_lineage, com
 
 ```{r, eval=FALSE}
 assay(sce_matching, "pearson_residuals") <- counts_vst$y
-saveRDS(sce_matching, file = "../output/sce-matching-1pct-cells-expressing_pearson-residuals.rds")
+saveRDS(sce_matching, file = here("output/sce-matching-1pct-cells-expressing_pearson-residuals.rds"))
 ```
