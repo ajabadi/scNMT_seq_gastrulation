@@ -1,0 +1,4 @@
+.*
+__Hackathon
+data
+**/*dt_list.rds

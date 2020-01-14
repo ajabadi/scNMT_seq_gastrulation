@@ -1,3 +1,0 @@
-data
-output/acc_dist_mats.rds
-output/met_dist_mats.rds

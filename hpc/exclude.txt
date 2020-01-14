@@ -1,9 +1,0 @@
-.*
-exclude.txt
-*.Rproj*
-spartan
-hpc
-output
-data
-data/data-alias
-__*
