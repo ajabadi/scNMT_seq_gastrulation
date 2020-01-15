@@ -1,0 +1,95 @@
+---
+title: "Modify RNA data in the MAE"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+  rerun: false
+  cache: true
+output:
+  html_document:
+    toc: true
+---
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+library(MultiAssayExperiment)
+library(SingleCellExperiment)
+library(here)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+```
+
+## Load MAE and RNA data
+
+Load the created MAE and the pre-filtered RNA data with Pearson residuals assay:
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+sce_filtered_vst <- readRDS(here("output/sce-matching-1pct-cells-expressing_all-normalistion-methods.rds"))
+```
+
+## update scran logcounts after previous filtering
+
+```{r}
+gastru.mae[["rna"]] <- logcounts(sce_filtered_vst)
+```
+
+
+```{r}
+## function at add an assay to MAE
+add_experiment_to_mae <- function(mae, new_assay_as_named_list) {
+  MultiAssayExperiment(experiments = c(ExperimentList(new_assay_as_named_list), experiments(mae)), colData = colData(mae))
+}
+```
+
+
+## Add Pearson residuals
+
+```{r}
+## pearson residuals
+prs <- assay(sce_filtered_vst, "pearson_residuals")
+gastru.mae <- add_experiment_to_mae(mae = gastru.mae, new_assay_as_named_list = list(rna_sct_pr = prs))
+```
+
+## order genes in MAE based on variance
+
+A function to rank genes in assays based on variance:
+
+```{r}
+sort_assay_features <- function(mae, ## MAE
+                                assays = NULL
+){ 
+  stopifnot(all(assays %in% names(gastru.mae)))
+  for (assay_type in assays) {
+    mat <- as.matrix(mae[[assay_type]])
+    s2 <- matrixStats::rowVars(mat)
+    ranks <- order(s2, decreasing = TRUE)
+    mat <- mat[ranks,]
+    mae[[assay_type]] <- mat
+  }
+  mae
+}
+```
+
+## Output
+
+```{r}
+gastru.mae.sorted <- sort_assay_features(mae = gastru.mae, assays = c("rna_sct_pr", "rna"))
+## head variance rna
+rowVars(head(gastru.mae.sorted[["rna"]]))
+## tail variance pearson residuals
+rowVars(tail(gastru.mae.sorted[["rna_sct_pr"]]))
+```
+
+```{r}
+## Updated MAE
+gastru.mae.sorted
+```
+
+
+```{r, eval=params$rerun}
+saveRDS(gastru.mae.sorted, file = here("output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures_pearson-residuals_all-rna-ordered.rds"))
+```
