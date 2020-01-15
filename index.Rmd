@@ -13,5 +13,6 @@ knitr::opts_chunk$set(cache = params$cache)
 
 This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/master/scNMT-seq
 
-* [RNA pre-filtering](filter-rna-data.html)
-* [Comparison of normalisation methods for scRNAseq data](compare-rna-normalisation.html)
+* [RNA gene filtering based on expression](notebook/filter-rna-data.html)
+* [Comparison of normalisation methods for scRNAseq data](notebook/compare-rna-normalisation.html)
+* [Add pearson residuals to MAE and rank rna features based on variance](notebook/update-rna-in-mae.html)
