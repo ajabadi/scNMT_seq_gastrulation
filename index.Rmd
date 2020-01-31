@@ -18,6 +18,16 @@ This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/mas
 * commit changes so tracking is easier
 * A way/function to get consistent sample names for assays when creating the diablo's X for rna-promoter-p300-diablo.Rmd and others >> how did Lucy do it? Or how did we do it in the 'explore' file?
 
+# Directions
+
+- Get DIABLO LVs with stages / lineages and different design matrices >> either per-block or (weighted) consensus variates >> investiagte what would make sense.
+- Use metrics mentioned in https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1850-9 to evaluate the resulting 'clusters'
+- Run a K-means/median clustering using groud truth number of clusters for MOFA?
+- Look at LIGER and Harmony as well and see if you can come up with a crieria to compare
+
+
+i) Compare ARI and other benchmarking metrics in https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1850-9 using KNN with stages/lineages as 
+
 # RNA
 
 * [RNA gene filtering based on expression](notebook/filter-rna-data.html)
