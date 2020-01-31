@@ -24,6 +24,7 @@ library(here)
 library(parallel)
 library(mixOmics)
 library(knitr)
+library(magrittr)
 ```
 
 ```{r}
@@ -167,10 +168,10 @@ na_props <- c(0.1, 0.25, 0.4)
 bm_res <- benchmark_data(data_list, na_props, comps = ifelse(params$on_mac, 3L, 10L), subset = ifelse(params$on_mac, 30L, 0L), times = params$times)
 ```
 ```{r}
-saveRDS2(bm_res, file= here("output/imputation_benchmark.rds"), log = paste("mixOmics data -",paste(names(params),":",params, collapse = " ")), suffix = "auto")
+saveRDS2(bm_res, file= here("output/imputation_benchmark.rds"), suffix = "auto", log = paste0(paste0(names(params), ": "), paste0(params), collapse = " ; "))
 ```
 ```{r}
-bm_res <- readRDS(here("output/imputation_benchmark.rds"))
+# bm_res <- readRDS(here("output/imputation_benchmark.rds"))
 ```
 
 

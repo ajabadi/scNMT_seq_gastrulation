@@ -13,6 +13,20 @@ knitr::opts_chunk$set(cache = params$cache)
 
 This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/master/scNMT-seq
 
+# RNA
+
 * [RNA gene filtering based on expression](notebook/filter-rna-data.html)
 * [Comparison of normalisation methods for scRNAseq data](notebook/compare-rna-normalisation.html)
 * [Add pearson residuals to MAE and rank rna features based on variance](notebook/update-rna-in-mae.html)
+<!-- * [Predict unknown lineages using a PLSDA model with RNA data]() -->
+
+# Imputation
+
+* [imputation benchmarkig using means vs NIPALS](notebook/imputation.html)
+* [impute MAE](notebook/imputation.html)
+
+# Integration
+
+* [DIABLO - RNA - promoters - enhancers (markers + error rates)](notebook/)
+* [MOFA: RNA - promoters - enhancers (markerss)](notebook/)
+* [k-means silhouette/purity using block.spls RNA ~ promoters + enhancers vs MOFA variates ](notebook/)

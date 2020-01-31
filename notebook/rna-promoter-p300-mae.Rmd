@@ -1,0 +1,46 @@
+---
+title: "Create assay of certain assays"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(here)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+gastru.mae
+```
+
+## designate assays
+
+```{r}
+study_assays <- c("rna", "met_promoter", "acc_promoter", "met_p300", "acc_p300")
+```
+
+```{r}
+study_mae <- gastru.mae[,,study_assays]
+```
+
+```{r}
+rna_filtered <- readRDS(here("output/rna_umi-corrected-logcounts_filtered-nzv-genes_ordered-features.rds"))
+```
+
+```{r}
+saveRDS(study_mae, file = "gastru-mae-rna-prom-p300")
+```
+

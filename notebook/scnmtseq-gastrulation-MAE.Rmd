@@ -50,16 +50,36 @@ dcast_acc <- dcast_dt_list(acc_dt_list, row = "id", col = "id_acc", value.var = 
 
 ```{r, eval=TRUE}
 ## rename id_rna for sce
-sce <- sce[,colnames(sce) %in% sample_metadata$id_rna]
-id_map <- sample_metadata[,c("sample", "id_rna")] %>% data.frame(row.names = 2)
-colnames(sce) <- id_map[colnames(sce),]
+sce <- sce[,sample_metadata$id_rna]
+# id_map <- sample_metadata[,c("sample", "id_rna")] %>% data.frame(row.names = 2)
+# colnames(sce) <- id_map[colnames(sce),]
 ```
 ## make MAE
 
 ```{r}
+data_list <- list(
+  rna = logcounts(sce)
+
+  met_genebody = dcast_met$Genebody[,sample_metadata$id_rna],
+  met_promoter = dcast_met$Promoters[,sample_metadata$id_rna],
+  met_cgi = dcast_met$CGI[,sample_metadata$id_rna],
+  met_p300 = dcast_met$p300[,sample_metadata$id_rna],
+  met_CTCF = dcast_met$CTCF[,sample_metadata$id_rna],
+  met_DHS = dcast_met$DHS[,sample_metadata$id_rna],
+  acc_genebody = dcast_acc$Genebody[,sample_metadata$id_rna],
+  acc_promoter = dcast_acc$Promoters[,sample_metadata$id_rna],
+  acc_cgi = dcast_acc$CGI[,sample_metadata$id_rna],
+  acc_p300 = dcast_acc$p300[,sample_metadata$id_rna],
+  acc_CTCF = dcast_acc$CTCF[,sample_metadata$id_rna],
+  acc_DHS = dcast_acc$DH[,sample_metadata$id_rna]
+)
+```
+
+```{r}
 library(MultiAssayExperiment)
 
-exper.list <- ExperimentList(rna = logcounts(sce),
+exper.list <- ExperimentList(
+  rna = logcounts(sce),
                            
                            met_genebody = dcast_met$Genebody,
                            met_promoter = dcast_met$Promoters,
@@ -75,6 +95,30 @@ exper.list <- ExperimentList(rna = logcounts(sce),
                            acc_CTCF = dcast_acc$CTCF,
                            acc_DHS = dcast_acc$DHS
                            )
+```
+
+```{r}
+exper.list <- lapply(exper.list, function(x){
+  colnames(x) <- sample_metadata$sample
+})
+```
+
+
+```{r}
+all_identical <- function(lst) {
+  if (is.null(names(lst))) {
+    names(lst) <- seq_along(lst)
+  }
+  for (j in seq_along(lst[-1])) {
+    if (!identical(lst[[j]], lst[[j+1]]))
+      stop(sprintf("not identical elements: %s", paste(names(lst)[c(j, j+1)], collapse = " & ")), call. = FALSE)
+  }
+  TRUE
+}
+```
+
+```{r}
+all.identical(lapply(exper.list, colnames))
 ```
 
 

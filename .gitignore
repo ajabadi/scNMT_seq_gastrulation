@@ -6,3 +6,5 @@
 .Rproj.user
 __archive
 __backup
+Library
+**/*.out

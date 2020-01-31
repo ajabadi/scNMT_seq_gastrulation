@@ -1,6 +1,4 @@
 #!/bin/bash
-# Created by the Melbourne Bioinformatics job script generator for SLURM
-# Fri Nov 16 2018 16:28:07 GMT+1100 (AEDT)
 
 # Partition for the job:
 #SBATCH -p mig 
@@ -16,7 +14,7 @@
 #SBATCH --cpus-per-task=8
 
 # The amount of memory in megabytes per process in the job:
-#SBATCH --mem=16000
+#SBATCH --mem=32000
 
 # Send yourself an email when the job:
 # aborts abnormally (fails)
@@ -32,10 +30,9 @@
 # The maximum running time of the job in days-hours:mins:sec
 #SBATCH --time=0-01:00:00
 
-# Run the job from the directory where it was launched (default)
-
 # The modules to load:
 module load R/3.5.0-GCC-6.2.0
+# for rmd files
 module load pandoc/2.5
 
 # The job command(s):

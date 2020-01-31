@@ -1,3 +1,4 @@
+# devtools::install_github("ajabadi/Altools", upgrade = FALSE, quiet = TRUE)
 ## ----------- Set up .libPaths on HPC ----------- ##
 
 #' Set up .libPaths on HPC

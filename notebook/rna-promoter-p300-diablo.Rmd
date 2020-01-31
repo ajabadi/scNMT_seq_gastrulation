@@ -1,0 +1,175 @@
+---
+title: "DIABLO using rna, promoter and CTCF"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(mixOmics)
+library(here)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+```
+
+
+```{r}
+source(here("src/source-utils.R"))
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures_pearson-residuals_all-rna-ordered.rds'))  # MAE experiment
+gastru.mae
+```
+
+
+check coluymn names are consistent:
+
+```{r}
+all.identical <- function(lst) {
+  for (j in seq_along(lst[-1])) {
+    if (!identical(lst[j], lst[j+1]))
+      stop(sprintf("not identical elements: %s and %s",j , j+1 ), call. = FALSE)
+  }
+  TRUE
+}
+```
+
+```{r}
+all.identical(lapply(as.list(assays(gastru.mae)), colnames))
+```
+
+## designate assays
+
+```{r}
+study_assays <- c("rna", "met_promoter", "acc_promoter", "met_p300", "acc_p300")
+```
+
+```{r}
+get_study_mae <- function(mae, study_assays) {
+  study_mae <- mae[,,study_assays]
+}
+```
+
+```{r}
+study_mae <- gastru.mae[,,study_assays]
+
+if (params$on_mac) {
+  study_mae <- subset_mae(mae = study_mae, samples = 100, max_feat = 250)
+}
+```
+
+
+## run DIABLO
+
+
+```{r}
+tune_diablo_mae <- function(mae, design, ncomp = 2, test.keepX = c(5, seq(10, 50, 10)), Y = NULL, mode = "canonical", folds = NULL, impute_means = TRUE) {
+  
+  if (is.null(Y)) {
+    Y <- mae$stage
+  }
+  
+  if (is.null(folds) || min(table(Y)) < folds ) {
+    folds <- min(5, min(table(Y)))
+  }
+  X <- lapply(as.list(experiments(study_mae)), t)
+  X <- lapply(X, function(x){
+    rownames(x) <- 
+  })
+  if (impute_means) {
+    X <- lapply(X, impute_by_means)
+  }
+  test.keepX <- lapply(X, function(x) test.keepX)
+  
+  tune_diablo_res <- tune.block.splsda(X = X, Y = Y, ncomp = ncomp, test.keepX = test.keepX,  design = design, validation = "Mfold", folds = folds, weighted = TRUE, dist = "max.dist"
+                                       # , cpus = detectCores()
+  )
+  tune_diablo_res
+}
+```
+
+
+```{r}
+folds <- 5
+test.keepX = c(5,seq(10,50,10))
+ncomp = 2
+if (params$on_mac) {
+  folds <- 2
+  test.keepX = c(1,2)
+  ncomp = 2
+}
+design <- create_design(mae = study_mae, off_diag = 0.5, rna_only = TRUE)
+tune_diablo_res <- tune_diablo_mae(mae = study_mae, design = design, ncomp = ncomp, test.keepX = test.keepX, Y = NULL, mode = "canonical", folds = folds, impute_means = TRUE)
+saveRDS(tune_diablo_res, file = here(sprintf("output/tune-diablo_%s.rds", paste0(study_assays, collapse = "-"))))
+```
+
+
+<!-- ```{r} -->
+<!-- ## diablo -->
+<!-- run_diablo_mae <- function(mae, design_off_diag = 0.5, rna_only = TRUE, ncomp = 2, keepX = c(25, 25), Y = NULL, mode = "canonical") { -->
+
+<!--   if (is.null(Y)) { -->
+<!--     Y <- mae$lineage10x_2 -->
+<!--   } -->
+<!--   design <- create_design(mae = mae, off_diag = design_off_diag) -->
+<!--   X <- lapply(as.list(experiments(study_mae)), t) -->
+<!--   keepX <- create_keepX(mae, keepX = keepX) -->
+
+<!--   diablo_res <- block.splsda(X = X, Y = Y, ncomp = ncomp, keepX = keepX, mode = mode, design = design) -->
+<!--   diablo_res -->
+<!-- } -->
+<!-- ## block.spls -->
+<!-- run_spls_mae <- function(mae, design_off_diag = 0.5, rna_only = TRUE, ncomp = 2, keepX = c(25, 25), Y = NULL, mode = "canonical") { -->
+<!--   mae$stage_num <- as.numeric(gsub("E", "", mae$stage)) -->
+<!--   if (is.null(Y)) { -->
+<!--     Y <- as.matrix(mae$stage_num) -->
+<!--   } -->
+<!--   design <- create_design(mae = mae, off_diag = design_off_diag, rna_only = rna_only) -->
+<!--   X <- lapply(as.list(experiments(study_mae)), t) -->
+<!--   keepX <- create_keepX(mae, keepX = keepX) -->
+
+<!--   diablo_res <- block.spls(X = X, Y = Y, ncomp = ncomp, keepX = keepX, mode = mode, design = design) -->
+<!--   diablo_res -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- diablo_res <- run_diablo_mae(mae = study_mae) -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- block.spls_res <- run_spls_mae(mae = study_mae) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- design <- 0.5*(1-diag(length(study_mae))) -->
+<!-- keepX <- c(5,10) -->
+<!-- runtimes$gastru$tuno_diablo <- system.time({ -->
+<!--   tune_diablo_res <- -->
+<!--     tune.block.splsda( -->
+<!--       X = X, -->
+<!--       Y = study_mae$lineage10x_2, -->
+<!--       ncomp = 2, -->
+<!--       test.keepX = create_keepX(study_mae, keepX = keepX), -->
+<!--       design = design, -->
+<!--       cpus = parallel::detectCores() -->
+<!--     ) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- if (params$on_hpc) { -->
+<!--   saveRDS2(tune_diablo_res, file = here("output/tune_diablo_res.rds"), suffix = "auto", log = paste0(study_assays, collapse = ", ")) -->
+<!-- } -->
+<!-- ``` -->

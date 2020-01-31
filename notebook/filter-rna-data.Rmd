@@ -83,6 +83,31 @@ hist_mean_exp(sce_matching)
 
 A great number of genes with low mean expression are potentially affected by drop-out.
 
+## predict NA lineages
+
+```{r, eval=FALSE}
+rna_data <- t(gastru.mae[["rna"]])
+missing_lineages <- is.na(colData(gastru.mae)$lineage10x_2)
+known_lineages <- colData(gastru.mae)$lineage10x_2[!missing_lineages]
+## run pls on known lineages
+plsda_rna <- mixOmics::plsda(X = rna_data[!missing_lineage,], Y = known_lineages)
+## find the distance that performs best
+plsda_perf <- perf(plsda_rna, validation = "Mfold", folds = 8) ## centroids
+plsda_perf$error.rate
+# $overall
+#        max.dist centroids.dist mahalanobis.dist
+# comp1 0.5115431      0.6026731        0.6026731
+# comp2 0.3134872      0.2916160        0.2612394
+# 
+# $BER
+#        max.dist centroids.dist mahalanobis.dist
+# comp1 0.7503743      0.5296016        0.5296016
+# comp2 0.6308841      0.2322845        0.2853030
+predicted_lineages <- predict(plsda_rna, newdata = rna_data[missing_lineages,], dist = 'centroids.dist')
+predicted_lineages$class
+```
+
+
 ### Output
 
 Save the output expression data:

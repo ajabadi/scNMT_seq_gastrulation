@@ -1,4 +1,11 @@
-
+## ----------- impute_by_mean ----------- 
+## impute NAs as mean of columns
+impute_by_means <- function(x) {
+  apply(x, 2, function(y){
+    y[is.na(y)] <- mean(y, na.rm=TRUE)
+    y
+  })
+}
 ## ----------- ggplot color hue ----------- 
 gg_color_hue <- function(n) {
   hues = seq(15, 375, length = n + 1)
@@ -38,10 +45,18 @@ get_hvgs_sce <- function(sce = NULL,
 }
 
 ## ----------- create design matrix for MAE ----------- 
-create_design <- function(mae, off_diag = 0.5) {
+create_design <- function(mae, off_diag = 0.5, rna_only = FALSE) {
   
-  design = matrix(off_diag, ncol = length(mae), nrow = length(mae),
-                  dimnames = list(names(mae), names(mae)))
+
+  if (rna_only) {
+    design = matrix(0, ncol = length(mae), nrow = length(mae),
+                    dimnames = list(names(mae), names(mae)))
+    design[1,] <- design[,1] <- off_diag
+  } else {
+    design = matrix(off_diag, ncol = length(mae), nrow = length(mae),
+                    dimnames = list(names(mae), names(mae)))
+    
+  }
   diag(design) =  0
   
   design 
