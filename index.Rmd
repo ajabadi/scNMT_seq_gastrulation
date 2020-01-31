@@ -13,6 +13,11 @@ knitr::opts_chunk$set(cache = params$cache)
 
 This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/master/scNMT-seq
 
+# TO Do
+
+* commit changes so tracking is easier
+* A way/function to get consistent sample names for assays when creating the diablo's X for rna-promoter-p300-diablo.Rmd and others >> how did Lucy do it? Or how did we do it in the 'explore' file?
+
 # RNA
 
 * [RNA gene filtering based on expression](notebook/filter-rna-data.html)
