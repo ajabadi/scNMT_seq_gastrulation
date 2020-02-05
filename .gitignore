@@ -8,3 +8,5 @@ __archive
 __backup
 Library
 **/*.out
+**/*.html
+
