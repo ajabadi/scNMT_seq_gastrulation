@@ -2,4 +2,4 @@
 hpc/rsync/*
 __Hackathon
 data
-**/*dt_list.rds
+**/*_cache

@@ -1,0 +1,226 @@
+---
+title: "Single Omics"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+  nipals_ncomp: 20
+  grad_cols: !r c(low = "darkblue", high = "orange")
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(reticulate)
+library(nipals)
+library(mixOmics)
+library(umap)
+library(here)
+library(ggplot2)
+```
+
+
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+gastru.mae
+```
+
+# Expression
+
+
+```{r}
+expr <- t(assay(gastru.mae, "rna"))
+```
+
+```{r}
+# kmeans_rna <- kmeans(expr, centers = sum(!is.na(unique(coldata$lineage10x_2))), nstart = 2, iter.max = 500)
+```
+
+```{r, eval=F}
+expr_umap <- umap::umap(expr, method = "umap-learn", n_components = 3, metric = "euclidean", n_neighbors = 30)
+```
+
+
+```{r}
+plot_umap <- function(umap_out, col = "stage", comps = c(1,2), title = NULL, gradient_cols = NULL){
+  library(ggplot2)
+  df <- data.frame(umap_out$layout)
+  colnames(df) <- paste0("UMAP_",seq_len(dim(df)[2]))
+  df$stage <- gastru.mae$day
+  df$lineage <- gastru.mae$lineage10x_2
+  df$stage_lineage <- gastru.mae$stage_lineage
+  
+  comps <- paste0("UMAP_", comps)
+  p <- ggplot(df, aes_string(comps[1], comps[2], col = col))  + geom_point(alpha = 0.5) +  theme_bw()  +  guides(col = guide_legend(title = col))
+  
+  p <- p  + theme(legend.position = "bottom", legend.title=element_text(size=14))  + 
+    labs(title = title)
+  
+   if (is.character(gradient_cols) && length(gradient_cols) == 2)
+     p <- p  +  scale_color_gradient(low = gradient_cols["low"], high = gradient_cols["high"])
+  
+  p
+}
+
+```
+
+```{r}
+# plotly_umap <- function(umap_out, col = "stage", comps = c(1,2), col = "stage"){
+#   library(plotly)
+#   df <- data.frame(umap_out$layout)
+#   colnames(df) <- paste0("UMAP_",seq_len(dim(df)[2]))
+#   df$stage <- gastru.mae$day
+#   df$lineage <- gastru.mae$lineage10x_2
+#   df$stage_lineage <- gastru.mae$stage_lineage
+#   
+#   comps <- paste0("UMAP_", comps)
+#   
+#   plot_ly(data = df, x = ~get(comps[1]), y = ~get(comps[2]), z = ~get(comps[3]), 
+#           color = ~get(col), type = "scatter3d")  +  
+#     layout(annotations = list(text = "Day"))
+# }
+```
+
+
+```{r, eval=FALSE}
+plot_umap(expr_umap, col = "stage", comps = c(1,3))
+plot_umap(expr_umap, col = "lineage", comps = c(1,3))
+```
+
+#### Epigenetic data
+
+```{r}
+do_empca <- function(assay_name, mae, ncomp) {
+  ## perform nipals::empca on assay from mae where weights' name is wt_${assay_name}
+  
+  dataset <- t(assay(mae, assay_name))
+  weights <-  t(assay(mae, paste0("wt_", assay_name)))
+  
+  # if (params$on_mac) {
+  #   dataset <- subset_pn(dataset, n = 300, p = 200)
+  #   weights <- subset_pn(weights, n = 300, p = 200)
+  # }
+  empca.res <- nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = FALSE, scale = FALSE, fitted = TRUE)
+  
+}
+
+```
+
+```{r}
+get_empca_list <- function(mae, ncomp = 4) {
+  
+  assay_names <- names(assays(mae))[-1]
+  assay_names <- assay_names[!grepl(pattern = "^wt_", x = assay_names)]
+  
+    # if (params$on_mac) {
+    # assay_names <- assay_names[1:3]
+    # }
+  
+  assay_names <- named_list(assay_names)
+  mclapply(X = assay_names, do_empca, mae = mae, ncomp = ncomp, mc.cores = parallel::detectCores())
+}
+```
+
+```{r, eval = params$on_hpc}
+empca_list <- get_empca_list(mae = gastru.mae, ncomp = params$nipals_ncomp)
+saveRDS(empca_list, file = here(sprintf("output/empca-list_ncomp-%s.rds", params$nipals_ncomp)))
+```
+
+```{r, eval = params$on_mac}
+empca_list <- readRDS(here(sprintf("output/empca-list_ncomp-%s.rds", params$nipals_ncomp)))
+```
+
+```{r}
+plot_pcs <- function(empca_list, assay_name, comps, col = "stage", mae, gradient_cols = NULL) {
+  empca_out <- empca_list[[assay_name]]
+  df <- data.frame(empca_out$scores)
+  xl <- paste0("PC", comps[1])
+  yl <- paste0("PC", comps[2])
+  
+  df$stage <- mae$day
+  df$lineage <- mae$lineage10x_2
+  df$stage_lineage <- mae$stage_lineage
+  
+  p <- ggplot(df) +  geom_point(aes_string(x =xl, y = yl, color = col))  + 
+    theme(legend.position = "bottom", legend.title=element_text(size=14))
+  
+  if (is.character(gradient_cols) && length(gradient_cols) == 2)
+    p <- p  +  scale_color_gradient(low = gradient_cols["low"], high = gradient_cols["high"])
+  
+  p
+}
+
+```
+```{r}
+# dput(names(empca_list))
+c("met_genebody", "met_promoter", "met_cgi", "met_p300", "met_CTCF", 
+"met_DHS", "acc_genebody", "acc_promoter", "acc_cgi", "acc_p300", 
+"acc_CTCF", "acc_DHS")
+```
+
+
+```{r}
+plot_pcs(empca_list = empca_list, assay_name = "met_promoter", comps = c(2, 3), col = "stage", mae = gastru.mae, gradient_cols = params$grad_cols)
+plot_pcs(empca_list = empca_list, assay_name = "met_promoter", comps = c(2, 3), col = "lineage", mae = gastru.mae)
+```
+```{r}
+plot_empca_umap <- function(empca_list, assay_name, ...) {
+  umap_out <- umap::umap(empca_list[[assay_name]]$scores, method = "umap-learn", n_components = 2, metric = "euclidean", n_neighbors = 30)
+  p <- plot_umap(umap_out, ...)
+  return(p)
+}
+```
+
+```{r, eval = params$on_hpc}
+plots <- list()
+for (assay_name in names(empca_list)) {
+plots[[assay_name]] <- plot_empca_umap(empca_list = empca_list, assay_name = assay_name, col = "stage", comps = c(1,2), gradient_cols = params$grad_cols, title = assay_name)
+}
+saveRDS(plots, file=here(sprintf("output/umap-empca-plots_ncomp-%s.rds", params$nipals_ncomp)))
+```
+
+```{r, eval = params$on_mac}
+plots <- readRDS(here(sprintf("output/umap-empca-plots_ncomp-%s.rds", params$nipals_ncomp)))
+```
+
+
+```{r}
+plots
+```
+
+
+<!-- ```{r} -->
+<!-- library(mixOmics) -->
+<!-- assay_name <- "met_genebody" -->
+<!-- comps <- 4 -->
+<!-- mae <- gastru.mae -->
+
+<!-- dataset <- t(assay(mae, assay_name))[,1:200] -->
+<!-- pca.res <- pca(dataset, ncomp = comps) -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- plotIndiv(pca.res, pch = 16, group = mae$stage_lineage, legend = TRUE) -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- met_gbody_umap <- umap::umap(pca.res$variates$X, method = "umap-learn") -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- plot_umap(met_gbody_umap, col = "stage_lineage") -->
+<!-- ``` -->
+
+
+<!-- ```{r} -->
+<!-- df <- data.frame(expr_pca$variates$X) -->
+<!-- df$col <- coldata$day -->
+<!-- df$size <- coldata$stage_lineage -->
+<!-- df$kmeans_cluster <- factor(kmeans_rna$cluster) -->
+<!-- ggplot(df, aes_string("PC1", "PC3", col = "size"))  + geom_point(alpha = 0.5) +  theme_bw()  +  guides(col = guide_legend(title = "Stage")) -->
+<!-- ggplot(df, aes_string("umap_1", "umap_2", col = "kmeans_cluster"))  + geom_point(alpha = 0.5) +  theme_bw()  +  guides(col = guide_legend(title = "kmeans")) -->
+<!-- ``` -->
