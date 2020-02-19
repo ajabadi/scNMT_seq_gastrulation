@@ -13,27 +13,67 @@ knitr::opts_chunk$set(cache = params$cache)
 
 This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/master/scNMT-seq
 
+# Summary
+
+## Single Omic
+
+* PCA plots showed little structure (and major outliers) in all but `c("rna", "met_promoter", "acc_p300", "met_genebody", "acc_DHS")`
+* UMAP using NIAPLS-derived PCs for all omics did not recapitulate the biological structure better
+
+### imputation
+* imputation by means did not improve the diablo model >> no imputation at this stage
+
+## Multi-Omic
+
+## block.spls
+in methylation in promoter and genebody, and accessibility in P300 and DHS sites seemed to be coordinated with embryonic stages
+* `block.spls` using embyonic day as Y identifies signature which show overall increase in DNA methylation in promoter and genebody and decrease in accessibility of P300 and DHS sites, contrary to scNMTseq paper's reported overall behaviour for unsupervised LVs
+
+<!-- ### TODO -->
+<!-- * It can be expected that the genes highly demthylated in early stages to enrich for developmental functions -->
+
+## DIABLO
+* Lineage: Dynamic epigenetic changes in promoter and genebody methylation which has not yet caused coordinated chnages in gene expression
+
+
+
 # TO Do
+
+* Weighted nipals (`empca`)
+* UMAP using NIAPLS PCs - customise UMAP `umap.defaults` from https://umap-learn.readthedocs.io/en/latest/api.html DONE
+* block.spls with stage as continuous y and finding developmental signature DONE
+
+* Violin/boxplots of acc met for signature  DONE
+
+* for committed cells block.splsda 
+* Do enhancer or promoter sites for lineages precede transcriptional changes?
 
 * commit changes so tracking is easier
 * A way/function to get consistent sample names for assays when creating the diablo's X for rna-promoter-p300-diablo.Rmd and others >> how did Lucy do it? Or how did we do it in the 'explore' file?
 
+# Done
+
 # Directions
 
-- Get DIABLO LVs with stages / lineages and different design matrices >> either per-block or (weighted) consensus variates >> investiagte what would make sense.
+- only acc <> met interaction can be zero. Correlated features' ontology >> methyltransferase or chromatin modifying genes are correlated with met/acc? met ~ expression?
+- Get DIABLO LVs with stages / lineages and different design matrices >> either per-block or (weighted) consensus variates >> investigate what would make sense.
 - Use metrics mentioned in https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1850-9 to evaluate the resulting 'clusters'
-- Run a K-means/median clustering using groud truth number of clusters for MOFA?
-- Look at LIGER and Harmony as well and see if you can come up with a crieria to compare
+- Run a K-means/median clustering using ground truth number of clusters for MOFA?
+- Look at LIGER and Harmony as well and see if you can come up with a criteria to compare
 
 
 i) Compare ARI and other benchmarking metrics in https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1850-9 using KNN with stages/lineages as 
 
-# RNA
+# Preprocessing (post-hackathon submission changes to MAE)
 
-* [RNA gene filtering based on expression](notebook/filter-rna-data.html)
-* [Comparison of normalisation methods for scRNAseq data](notebook/compare-rna-normalisation.html)
-* [Add pearson residuals to MAE and rank rna features based on variance](notebook/update-rna-in-mae.html)
-<!-- * [Predict unknown lineages using a PLSDA model with RNA data]() -->
+* ![RNA gene filtering based on expression](notebook/preprocessing/preprocessing.html)
+  - RNA features were required to be expressed in 1% of the cells
+  - RNA features were ordered based on variance
+  - Added a numeric `day` column data to MAE as embryonic day
+
+# Single Omics
+
+* 
 
 # Imputation
 
@@ -42,6 +82,8 @@ i) Compare ARI and other benchmarking metrics in https://genomebiology.biomedcen
 
 # Integration
 
-* [DIABLO - RNA - promoters - enhancers (markers + error rates)](notebook/)
+* [block.spls - RNA - promoters - enhancers - DHS](notebook/rna-promoter-p300-block-spls.html)
+* [DIABLO - RNA - promoters - enhancers - DHS (markers + error rates)](notebook/rna-promoter-p300-block-splsda.html)
+
 * [MOFA: RNA - promoters - enhancers (markerss)](notebook/)
 * [k-means silhouette/purity using block.spls RNA ~ promoters + enhancers vs MOFA variates ](notebook/)

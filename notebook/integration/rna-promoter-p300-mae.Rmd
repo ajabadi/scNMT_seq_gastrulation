@@ -12,6 +12,7 @@ output:
 ```{r, warning=FALSE, message=FALSE}
 library(MultiAssayExperiment)
 library(here)
+source(here("src/source-utils.R"))
 ```
 
 
@@ -25,6 +26,10 @@ knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
 gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
 gastru.mae
 ```
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
 
 ## designate assays
 
@@ -33,14 +38,34 @@ study_assays <- c("rna", "met_promoter", "acc_promoter", "met_p300", "acc_p300")
 ```
 
 ```{r}
-study_mae <- gastru.mae[,,study_assays]
+all_identical <- function(lst) {
+  if (is.null(names(lst))) {
+    names(lst) <- seq_along(lst)
+  }
+  for (j in seq_along(lst[-1])) {
+    if (!identical(lst[[j]], lst[[j+1]]))
+      stop(sprintf("not identical elements: %s", paste(names(lst)[c(j, j+1)], collapse = " & ")), call. = FALSE)
+  }
+  TRUE
+}
 ```
 
-```{r}
-rna_filtered <- readRDS(here("output/rna_umi-corrected-logcounts_filtered-nzv-genes_ordered-features.rds"))
-```
+
 
 ```{r}
-saveRDS(study_mae, file = "gastru-mae-rna-prom-p300")
+diablo_wrapper <- function(mae, study_assays, do.tune=FALSE, ncomp=2) {
+  X <- lapply(named_list(study_assays), function(x) t(assay(mae,x)))
+  if (!do.tune) {
+    keepX <- c(50, 50)
+  }
+  
+}
 ```
+
+
+```{r}
+order(rowVars(assay(gastru.mae, "rna")))
+```
+
+
 

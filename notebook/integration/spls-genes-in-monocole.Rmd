@@ -1,0 +1,169 @@
+---
+title: "block.spls using rna, promoter, and p300 enhancer sites"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(mixOmics)
+library(here)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = !FALSE, warning = FALSE, out.width = "100%")
+```
+
+
+```{r}
+source(here("src/source-utils.R"))
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+gastru.mae
+```
+
+
+check column names are consistent:
+
+```{r}
+all_identical(colnames(gastru.mae))
+```
+
+## designate assays
+
+```{r}
+# study_assays <- c("rna", "met_promoter", "acc_p300", "met_genebody", "acc_DHS")
+study_assays <- c("rna", "met_genebody", "met_promoter", "met_cgi",  "acc_promoter", "acc_cgi",  "acc_p300", "acc_CTCF", "acc_DHS")
+```
+
+exclude those with unknown lineages:
+
+```{r}
+study_mae <- gastru.mae[,,study_assays]
+study_mae
+coldata <- data.frame(colData(study_mae))
+```
+
+# Monocle
+
+```{r}
+library(monocle3)
+celldataset <- new_cell_data_set(expression_data = exp(as.matrix(assay(study_mae, "rna"))), cell_metadata = coldata)
+celldataset <- preprocess_cds(celldataset, method = "PCA", num_dim = 100, pseudo_count = 0, scaling = FALSE)
+celldataset <- reduce_dimension(celldataset, max_components = 30, reduction_method = "UMAP", umap.metric = "cosine", cores = 4, umap.fast_sgd = TRUE)
+
+celldataset <- cluster_cells(cds = celldataset, reduction_method = "UMAP")
+celldataset <- learn_graph(cds = celldataset, use_partition = FALSE, close_loop = FALSE)
+
+```
+
+## UMAP
+
+```{r}
+umap_df <- data.frame(celldataset@reducedDims$UMAP)
+ggplot(umap_df, aes(X1, X2)) + geom_point(aes(col = celldataset@colData$stage_lineage))
+```
+
+
+# sPLS(day ~ rna)
+
+Find samples with high error rate when using sPLSDA:
+
+```{r}
+rna <- t(assay(study_mae, "rna"))
+lineage <- factor(study_mae$lineage10x_2)
+```
+
+
+```{r, eval=params$on_hpc}
+design <- create_design(mae = study_mae, off_diag = 0.5, rna_only = TRUE)
+keepX <- create_keepX(study_mae, keepX = c(50, 50))
+
+block.splsda.res <- block.splsda(X = X, Y = Y, ncomp = 2, keepX = keepX)
+saveRDS(block.splsda.res, file = here("output/block.splsda.res.rds"))
+```
+
+```{r}
+block.splsda.res <- readRDS(here("output/block.splsda.res.rds"))
+```
+
+
+```{r}
+plotIndiv(block.splsda.res, pch=16, group = study_mae$stage, legend = TRUE, comp = 1:2, blocks = seq_along(X), legend.title = "Stage")
+plotIndiv(block.splsda.res, pch=16, group = coldata$lineage10x_2, legend = TRUE, comp = 1:2, blocks = seq_along(X), legend.title = "Lineage")
+```
+
+Methylation in promoters and accessibility in p300 enhancers seem to correlate with embryonic days:
+
+```{r}
+library(data.table)
+coldata_dt <- data.table(coldata, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
+selected_features <- selectVar(block.splsda.res)[seq_along(X)]
+```
+
+### mean rate for selected features by stage
+
+```{r}
+boxplot_means <- function(omic, x_lab, y_lab) {
+  dt <- data.table(X[[omic]][,selected_features[[omic]]$name], keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
+  dt <- melt.data.table(dt, variable.name = "feature", value.name = "rate")
+  dt <- data.table::merge.data.table(dt, coldata_dt)
+  df <- data.frame(dt[,.(mean_rate = mean(rate, na.rm=TRUE)), by = c("lineage10x_2", "feature")])
+  ggplot(df)  +  geom_violin(aes(x = lineage10x_2, y = mean_rate, fill = lineage10x_2))  +  geom_boxplot(aes(x = lineage10x_2, y = mean_rate, fill = lineage10x_2), width = 0.1, alpha = 0.4 )  + 
+    labs(x = x_lab, y = y_lab)  +  theme_bw()
+}
+```
+
+#### rna
+
+
+```{r}
+boxplot_means(omic = "rna", x_lab = "Embryonic Stage", y_lab = "mean gene expression across cells")
+```
+
+#### met_promoter
+
+```{r}
+boxplot_means(omic = "met_promoter", x_lab = "Embryonic Stage", y_lab = "mean promoter methylation")
+```
+
+#### met_genebody
+
+```{r}
+boxplot_means(omic = "met_genebody", x_lab = "Embryonic Stage", y_lab = "mean genebody methylation")
+```
+
+#### acc_p300
+
+```{r}
+boxplot_means(omic = "acc_p300", x_lab = "Embryonic Stage", y_lab = "mean enhancer accessibility")
+```
+
+#### acc_DHS
+
+```{r}
+boxplot_means(omic = "acc_p300", x_lab = "Embryonic Stage", y_lab = "mean gene expression across cells")
+```
+
+```{r}
+# plotVar(block.spls.res, var.names = FALSE, pch = c(16:21), cutoff = 0.5, legend = TRUE)
+```
+
+```{r}
+# corMat <- network(block.spls.res, save = "pdf", name.save = "block.spls.network", cutoff = 0.81)
+```
+
+```{r}
+# library(knitr)
+# include_graphics("block.spls.network.pdf")
+```

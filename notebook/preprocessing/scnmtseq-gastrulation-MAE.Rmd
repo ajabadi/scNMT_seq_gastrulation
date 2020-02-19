@@ -118,7 +118,7 @@ all_identical <- function(lst) {
 ```
 
 ```{r}
-all.identical(lapply(exper.list, colnames))
+all_identical(lapply(exper.list, colnames))
 ```
 
 

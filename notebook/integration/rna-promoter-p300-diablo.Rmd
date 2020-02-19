@@ -28,31 +28,15 @@ source(here("src/source-utils.R"))
 # Data
 
 ```{r}
-gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures_pearson-residuals_all-rna-ordered.rds'))  # MAE experiment
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
 gastru.mae
 ```
 
 
-check coluymn names are consistent:
-
-```{r}
-all.identical <- function(lst) {
-  for (j in seq_along(lst[-1])) {
-    if (!identical(lst[j], lst[j+1]))
-      stop(sprintf("not identical elements: %s and %s",j , j+1 ), call. = FALSE)
-  }
-  TRUE
-}
-```
-
-```{r}
-all.identical(lapply(as.list(assays(gastru.mae)), colnames))
-```
-
 ## designate assays
 
 ```{r}
-study_assays <- c("rna", "met_promoter", "acc_promoter", "met_p300", "acc_p300")
+study_assays <- c("rna", "met_promoter", "acc_p300", "met_genebody", "acc_DHS")
 ```
 
 ```{r}
