@@ -19,9 +19,13 @@ calc_site_stats <- function(filePath=NULL,
   
   ## helper functions - weights based on SE
   weight_se <- function(r, total ){
-    se2 <- r*(1-r)/(total)
-    w <- 1/se2
+    se <- sqrt(r*(1-r)/(total))
+    w <- 1/se
     return(w)
+  }
+  
+  calc_effetive_df <- function(weights){ ## effective degree of freedom for chi-squared statistic when there are weights
+    (sum(weights)^2 - sum(weights^2))/sum(weights)
   }
   
   colNames <- c(sample_name,"id","anno","Nmet","N","rate")
@@ -38,9 +42,10 @@ calc_site_stats <- function(filePath=NULL,
     .[,rate:=(Nmet+1)/(N+2)] %>% ## MAP estimate for rate
     # ml2map %>% 
     .[,wij:=weight_se(rate, N)] %>%  ## weights based on SE of MAP estimates
-    .[,rbar:=sum(wij*rate)/sum(wij), by=c('anno', 'id')] %>%  ## mean across cells
-    .[,n_i:= (sum(wij)^2 - sum(wij^2))/sum(wij), by=c('anno', 'id')] %>%  ## sum of sample weights at region
-    .[,vhat:= sum(wij*(rate-rbar)^2)/n_i,  by=c('anno', 'id')] %>%  ## site variance across cells
+    .[,scaled_wt := scale(sqrt(wij), center = FALSE, scale = TRUE), by=c('anno', 'id')] %>% 
+    .[,rbar:=sum(scaled_wt*rate)/sum(scaled_wt), by=c('anno', 'id')] %>%  ## mean across cells
+    .[,n_i:= calc_effetive_df(scaled_wt), by=c('anno', 'id')] %>%  ## sum of sample weights at region
+    .[,vhat:= sum(scaled_wt*(rate-rbar)^2)/n_i,  by=c('anno', 'id')] %>%  ## site variance across cells
     .[,lci:= n_i*vhat/(qchisq(p=1-alpha/2, df = n_i)),  by=c('id', 'anno')] #%>%  ## lower bound of CI
   # .[,cv:=sqrt(lci)/rbar] %>% 
   # .[,sd:=sqrt(lci/(.N-1)),  by=c('id', 'anno')] ## coefficient of variation
@@ -74,7 +79,7 @@ wt_euc_dist <- function(met_dt = met_dt,
   all_cells <- unique(met_dt[,sample_name, with=FALSE]) %>% unlist() %>% sort()
   iter <- perm(cell_names = all_cells, ids = unique(met_dt$id))
   ## to use for joins
-  joiner <- met_dt[,c(sample_name, "id", "rate", "wij", "N"), with=FALSE] %>% set_names(c("cell1", "id", "wij", "rate", "N"))
+  joiner <- met_dt[,c(sample_name, "id", "rate", "scaled_wt", "N"), with=FALSE] %>% set_names(c("cell1", "id", "scaled_wt", "rate", "N"))
   
   ## add cell1 weight and N
   iter <- merge(iter, joiner, by = c("id", "cell1"), all.x = TRUE)
@@ -83,7 +88,7 @@ wt_euc_dist <- function(met_dt = met_dt,
   iter <- merge(iter, joiner %>% setnames("cell1", "cell2"), by = c("id", "cell2"), all.x = TRUE)
   
   ## add site total bi-cell weight as sqrt of products, if both present
-  iter[,wi_jk:=sqrt(wij.x*wij.y)]
+  iter[,wi_jk:=sqrt(scaled_wt.x*scaled_wt.y)]
   
   ## sum of weights
   iter[,sumwt:=sum(wi_jk, na.rm = TRUE), by=id]
