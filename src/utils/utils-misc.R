@@ -1,3 +1,39 @@
+## ----------- set_if_null ----------- 
+### from Altools
+set_if_null <- function(null_arg=NULL, default_value) {
+  return(
+    if (is.null(null_arg))
+      default_value
+    else
+      null_arg
+  )
+}
+## ----------- suffix_colnames ----------- 
+## add suffix to column names for integration
+suffix_colnames <- function(x, indices=1:2){
+  for (j in indices) {
+    suff <- names(x)[j]
+    colnames(x[[j]]) <- paste0(colnames(x[[j]]), suff)
+  }
+  x
+}
+## ----------- all_identical ----------- 
+## check if elements in a list are identical
+all_identical <- function(lst) {
+  for (j in seq_along(lst[-1])) {
+    if (!identical(lst[[j]], lst[[j+1]]))
+      stop(sprintf("not identical elements: %s and %s",j , j+1 ), call. = FALSE)
+  }
+  TRUE
+}
+## ----------- named_list ----------- 
+## create a named list
+named_list <- function(char) {
+  out <- as.list(char)
+  names(out) <- char
+  out
+}
+
 ## ----------- impute_by_mean ----------- 
 ## impute NAs as mean of columns
 impute_by_means <- function(x) {
@@ -68,19 +104,22 @@ create_keepX <- function(mae, keepX) {
 }
 
 ## ----------- subset MAE ----------- 
-subset_mae <- function(mae, samples=100, max_feat=150, SEED=42) {
-  for (i in seq_along(experiments(mae))) {
-    feats <- min(dim( mae[[i]])[1], max_feat)
-    mae[[i]] <-  mae[[i]][seq_len(feats),]
-  }
-  n_cells <- dim(mae[[1]])[2]
-  set.seed(SEED)
-  mae[,sample(x = seq_len(n_cells), size = samples),]
-}
+# subset_mae <- function(mae, n=NULL, p=NULL, SEED=42) {
+#   for (i in seq_along(experiments(mae))) {
+#     feats <- min(dim( mae[[i]])[1], p)
+#     mae[[i]] <-  mae[[i]][seq_len(feats),]
+#   }
+#   n_cells <- dim(mae[[1]])[2]
+#   set.seed(SEED)
+#   mae[,sample(x = seq_len(n_cells), size = n),]
+# }
 
 ## for subsetting the P x N data on local computer
-# subset_pn <- function(mat, n=50, p=100) {
-#   n <- min(n, dim(mat)[2])
-#   p <- min(p, dim(mat)[1])
-#   mat[seq_len(p), seq_len(n)]
-# }
+subset_pn <- function(mat, n=NULL, p=NULL) {
+  p <- p %||% dim(mat)[2]
+  n <- n %||% dim(mat)[1]
+  
+  p <- min(p, dim(mat)[2])
+  n <- min(n, dim(mat)[1])
+  mat[seq_len(n), seq_len(p)]
+}
