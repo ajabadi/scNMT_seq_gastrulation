@@ -1,0 +1,404 @@
+---
+title: "Single Omics"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+  nipals_ncomp: 20
+  grad_cols: !r c(low = "darkblue", high = "orange")
+  rerun: true
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(nipals)
+library(mixOmics)
+library(reticulate)
+library(umap)
+library(here)
+library(ggplot2)
+library(microbenchmark)
+library(parallel)
+library(SingleCellExperiment)
+library(MultiAssayExperiment)
+```
+
+# Data
+
+```{r load-data, eval=params$rerun}
+# load(url("https://github.com/LuyiTian/sc_mixology/blob/master/data/sincell_with_class.RData?raw=true"))
+# saveRDS(sce_sc_10x_qc, file = here("output", "cellbench-10x.rds"))
+suppressMessages({
+  ## CellBench
+  cellbench_10x <- readRDS(here("output", "cellbench-10x.rds"))
+  cellbench_10x_logcounts <- logcounts(cellbench_10x) %>% t()
+  
+  ## scNMTseq - rna
+  sce <- readRDS(here("output", "sce-matching-1pct-cells-expressing.rds"))
+  mae <- readRDS(here("output", "scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds"))
+})
+
+```
+
+
+# Functions
+
+```{r}
+rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
+  mat <- as.matrix(mat)
+  if (prop == 0) {
+    out <- mat
+  } else {
+    repeat_rand <- TRUE
+    seed_no <- 42
+    i <- 1
+    while (repeat_rand) {
+      
+      set.seed(seed_no)
+      ## calculate the total number of NAs
+      total_na <- floor(prop*prod(dim(mat)))
+      vec <- as.vector(mat)
+      vec[sample(seq_along(vec), size = total_na, replace = FALSE)] <- NA
+      out <- matrix(vec, ncol = ncol(mat), dimnames = dimnames(mat))
+      ## make sure no column/row has more than
+      repeat_rand <- (max(colSums(is.na(out))) > 0.9*dim(out)[1]) | (max(rowSums(is.na(out))) > 0.9*dim(out)[2])
+      seed_no <- seed_no  +  i
+      i <- i  +  1
+      if (i > 2000) {
+        warning("Failed to create suitable matrix with disperse NAs", call. = FALSE)
+        break
+      }
+      
+    }
+  }
+
+
+  out
+}
+## ------------------------------------------------------------------------ ##
+subset_please <- function(dataset, np_subset = c(0, 0), pheno = NULL) {
+  set.seed(21)
+  np_data <- dim(dataset)
+  np_subset <- mapply(x = np_data, y = np_subset, FUN = function(x, y){
+      if (y == 0 | y > x) 
+        y <- x
+      y
+    })
+  rows <- sample(x = np_data[1], size = np_subset[1], replace = FALSE)
+  cols <- sample(x = np_data[2], size = np_subset[2], replace = FALSE)
+  
+  return(list(dataset = dataset[rows, cols], pheno = pheno[rows]))
+}
+## ------------------------------------------------------------------------ ##
+## run mixOmics:: and niapls::nipals on dataset with different NA proportions and records run times
+benchmark_nipals <-
+  function(dataset,
+           weights = NULL,
+           props = c(0.1, 0.25, 0.4),
+           ncomp = 2,
+           center = TRUE,
+           scale = TRUE,
+           gramschmidt = FALSE,
+           reconst = FALSE,
+           repeat_runs = 1,
+           subset = c(0, 0),
+           pheno=NULL
+           ){
+    
+    max.iter <- 500
+    tol <- 1e-9
+    
+    benchmark_nipals_helper <- function(dataset_na, repeat_runs) {
+      
+
+      mixOmics_nipals <- mixOmics::nipals(X = dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol)
+      
+      mb.res_mixOmics <- microbenchmark(
+        "mixOmics::nipals" = mixOmics::nipals(dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol),
+        times = repeat_runs, unit = "s")
+      
+      ## runtimes
+      if (!is.null(weights)) {
+        nipals_empca <- nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, seed = 100, fitted = reconst, gramschmidt = gramschmidt)
+        
+        mb.res_nipals <- microbenchmark(
+          "nipals::empca" = nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, seed = 100, fitted = reconst, gramschmidt = gramschmidt),
+          times = repeat_runs, unit = "s")
+      } else {
+        nipals_nipals <- nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = FALSE, force.na = TRUE)
+        ## runtimes
+        mb.res_nipals <- microbenchmark(
+          "nipals::nipals" = nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = TRUE),
+          times = repeat_runs, unit = "s")
+        
+      }
+      mb.class <- class(mb.res_mixOmics)
+      mb.res <- Reduce(f = rbind, x = list(as.data.frame(mb.res_mixOmics), as.data.frame(mb.res_nipals)))
+      class(mb.res) <- mb.class
+      
+      out <- list(
+        dataset = dataset_na,
+        microbenchmark = mb.res,
+        mixOmics_nipals =  mixOmics_nipals
+      )
+      if (is.null(weights)) {
+        out$nipals_nipals <- nipals_nipals
+      } else {
+        out$nipals_empca <- nipals_empca
+      }
+
+      ## output
+      return(out)
+    }
+    
+    ## ensure subset n, p) is valid
+    subset_res <- subset_please(dataset = dataset, np_subset = subset, pheno = pheno)
+    
+    dataset <- subset_res$dataset
+    pheno <- subset_res$pheno
+    
+    nipals_benchmark_results <- list()
+    
+    for (prop_i in props) {
+      dataset_na <- rand_na(dataset, prop = prop_i)
+      dataset_na <- base::scale(x = dataset_na, scale= scale, center = center)
+      nipals_benchmark_results[[paste0("prop_NA_", prop_i)]] <- tryCatch(benchmark_nipals_helper(dataset_na = dataset_na, repeat_runs = repeat_runs), error = function(e) e)
+    }
+    
+    nipals_benchmark_results[["pca"]] <- mixOmics::pca(dataset, ncomp = ncomp, center = center, scale = scale, max.iter = max.iter, tol = tol)
+    nipals_benchmark_results[["pheno"]] <- pheno
+     return(nipals_benchmark_results)
+  }
+## ------------------------------------------------------------------------ ##
+plot_helper <- function(df, comps = c(1,2), title = NULL) {
+  axes <- paste0("PC", comps)
+  p <- ggplot(df)  + labs(x = axes[1], y = axes[2], title = title)
+  
+  if ("pheno" %in% colnames(df)) {
+    p <- p  +  geom_point(aes_string(x = axes[1], y = axes[2], col = "pheno"))  + 
+      guides(col = guide_legend("Phenotype"))
+  } else {
+    p <- p  +  geom_point(aes_string(x = axes[1], y = axes[2]))
+  }
+  p
+}
+## ------------------------------------------------------------------------ ##
+show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE) {
+  if (is(bm_res[[which]], "error")) {
+    cat("This run has encountered error due to abundance of NAs")
+  } 
+  else 
+  {
+    library(microbenchmark)
+    show_microbench <- function(x) microbenchmark:::print.microbenchmark(x, unit = "s", signif = 2)
+    if (is.null(bm_res$pheno)) {
+      if (isTRUE(col))
+        cat("No $pheno output for coloring")
+      col <- FALSE
+    }
+    res <- list()
+    res_i <- bm_res[[which]]
+    dataset <- res_i[["dataset"]]
+    
+    res$benchmark <- show_microbench(res_i[["microbenchmark"]])
+    mixo_res <- res_i[["mixOmics_nipals"]]
+    pca_df <- bm_res[["pca"]]$variates$X %>% data.frame()
+    if (isTRUE(col)) {
+      pca_df$pheno <- bm_res$pheno
+    }
+    res$pca <-  plot_helper(pca_df, comps=comps, title = "PCA")
+    
+    mixo_df <- mixo_res$t %>% data.frame() %>% set_colnames(paste0("PC", seq_len(dim(mixo_res$p)[2]))) %>% set_rownames(rownames(dataset))
+    
+    if (isTRUE(col)) {
+      mixo_df$pheno <- bm_res$pheno
+    }
+    title <- "mixOmics::nipals"
+    if (!grepl("0$", x = title)) title <- sprintf("%s - %s", title, names(bm_res)[which])
+    res$mixOmics <- plot_helper(mixo_df, comps=comps,  title =  title)
+    
+    nipals_res <- res_i[["nipals_nipals"]]
+    nipals_df <- data.frame(nipals_res$scores)
+    if (isTRUE(col)) {
+      nipals_df$pheno <- bm_res$pheno
+    }
+    title <- "nipals::nipals"
+    if (!grepl("0$", x = title)) title <- sprintf("%s - %s", title, names(bm_res)[which])
+    if (grepl("0$", x = title)) title <- NULL
+    res$nipals <- plot_helper(nipals_df, comps=comps, title = title)
+    
+    res
+  }
+  
+ 
+}
+
+benchmark_nipals_across_datasets <- function(datasets, props_NA, phenos, ...) {
+  mapply(x = datasets, y = phenos, FUN = function(x, y,  ...) {
+     bm_res <- benchmark_nipals(dataset = x, props = props_NA, pheno = y, ...)
+  })
+}
+```
+
+# RNA Data (no weights)
+
+## Without Gram-Schmidt
+
+```{r}
+bm_datasets_res <- list()
+```
+
+```{r}
+# data.frame(
+#   cellbench = list(dataset = cellbench_10x_logcounts, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = cellbench_10x$cell_line),
+#   nutrimouse = list(dataset = nutrimouse$gene, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = nutrimouse$diet),
+#   breast.tumors = list(dataset = breast.tumors$gene.exp, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = breast.tumors$sample$treatment)
+# )
+```
+
+```{r rna-benchmark-load, eval=!params$rerun}
+bm_datasets_res <- readRDS(here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
+```
+
+
+### CellBench 10X
+
+```{r}
+data_name <- "cellbench_10x"
+```
+
+```{r cellbench-run, eval=params$rerun}
+dataset <- cellbench_10x_logcounts
+props_NA <- c(0.1, 0.25, 0.4)
+repeat_runs <- 1
+subset <- c(300, 500)
+pheno = cellbench_10x$cell_line
+
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+```
+
+```{r}
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 2)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
+```
+
+### nutrimouse
+
+Does not contain dominant axes of variation
+
+```{r}
+data_name <- "nutrimouse"
+```
+
+
+```{r nutrimouse-run, eval=params$rerun}
+data("nutrimouse")
+dataset <- nutrimouse$gene
+props_NA <- c(0.1, 0.25, 0.4)
+repeat_runs <- 6
+pheno = nutrimouse$diet
+
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+```
+
+```{r}
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 2)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
+```
+
+### breast.tumors
+
+Does not contain dominant axes of variation
+
+```{r}
+data_name <- "breast.tumors"
+```
+
+```{r breast-run, eval=params$rerun}
+data("breast.tumors")
+dataset <- breast.tumors$gene.exp
+props_NA <- c(0.1, 0.25, 0.4)
+repeat_runs <- 1
+subset <- c(300, 500)
+pheno = breast.tumors$sample$treatment
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+```
+
+```{r}
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 2)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
+```
+
+### scNMTseq
+
+```{r}
+data_name <- "scnmtseq"
+```
+
+```{r scnmtseq-run, eval=params$rerun}
+sce <- sce[,sce$lineage %in% c("Mesoderm", "Endoderm", "Ectoderm")]
+sce <- sce[order(rowVars(logcounts(sce)), decreasing = TRUE),]
+scnmtseq <- logcounts(sce) %>% t() %>% .[,1:2000]
+dataset <- scnmtseq
+props_NA <- c(0.1, 0.25, 0.4)
+repeat_runs <- 1
+subset <- c(300, 500)
+pheno = sce$lineage
+
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+```
+
+```{r}
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 2)
+show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
+```
+
+```{r saveruns, eval=params$rerun}
+saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
+```
+
+```{r}
+propNA <- "prop_NA_0.25"
+
+get_datasets_runtimes <- function(propNA, bm_res) {
+  theList <- lapply(bm_res, function(x){
+    summary(x[[propNA]][["microbenchmark"]])[,c("expr","mean")]
+  })
+  rbindListWithNames(theList)
+}
+
+
+
+
+get_all_runtimes <- function(propNA_vec, bm_res) {
+  theList <- lapply(namedList(propNA_vec), function(x) {
+    get_datasets_runtimes(x, bm_res = bm_res)
+  })
+  rbindListWithNames(theList, new_col = "prop_NA")
+}
+
+```
+
+```{r}
+ggplot_all_runtimes <- function(df, ...) {
+  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr, shape = prop_NA), size=3)  +  theme_bw()  + 
+    guides(col = guide_legend(title = "function"), shape = guide_legend(title = "NA proportion"))  + 
+    labs(...)
+}
+```
+
+```{r}
+df <- get_all_runtimes(propNA_vec = names(bm_datasets_res[[1]])[1:2], bm_res = bm_datasets_res)
+
+ggplot_all_runtimes(df, x = "Dataset", y = "Mean Runtime (sec)", title = "NIPALS")
+```
+
+
+
+
