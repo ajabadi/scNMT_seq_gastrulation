@@ -1,16 +1,24 @@
 ---
-title: "Single Omics"
+title: "Single Omics NIPALS"
 author: "Al J Abadi"
 params:
   on_hpc: !r Sys.info()['user'] != 'alabadi'
   on_mac: !r Sys.info()['user'] == 'alabadi'
-  nipals_ncomp: 20
-  grad_cols: !r c(low = "darkblue", high = "orange")
-  rerun: false
+  nipals_ncomp: 2
+  # grad_cols: !r c(low = "darkblue", high = "orange")
+  subset: !r c(50, 100)
+  rerun: true
+  saveRDS: false
+  repeat_runs: 1
+  props_NA: !r c(0.1, 0.25, 0.4)
 output:
   html_document:
     toc: true
 ---
+
+```{r}
+dput(params)
+```
 
 ```{r, warning=FALSE, message=FALSE}
 library(nipals)
@@ -24,7 +32,7 @@ library(parallel)
 library(SingleCellExperiment)
 library(MultiAssayExperiment)
 
-sapply(list.files(here('src', 'utils'), pattern = "*.R", full.names = TRUE), source)
+invisible(sapply(list.files(here('src', 'utils'), pattern = "*.R", full.names = TRUE), source))
 ```
 
 # Data
@@ -56,18 +64,9 @@ source(here("src", "nipals-utils.R"))
 bm_datasets_res <- list()
 ```
 
-```{r}
-# data.frame(
-#   cellbench = list(dataset = cellbench_10x_logcounts, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = cellbench_10x$cell_line),
-#   nutrimouse = list(dataset = nutrimouse$gene, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = nutrimouse$diet),
-#   breast.tumors = list(dataset = breast.tumors$gene.exp, props_NA = c(0.1, 0.3, 0.5), repeat_runs = 1, subset = c(300, 600), pheno = breast.tumors$sample$treatment)
-# )
-```
-
 ```{r rna-benchmark-load, eval=!params$rerun}
 bm_datasets_res <- readRDS(here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
 ```
-
 
 ### CellBench 10X
 
@@ -77,10 +76,11 @@ data_name <- "cellbench_10x"
 
 ```{r cellbench-run, eval=params$rerun}
 dataset <- cellbench_10x_logcounts
-props_NA <- c(0.1, 0.25, 0.4)
-repeat_runs <- 1
-subset <- c(300, 500)
 pheno = cellbench_10x$cell_line
+
+props_NA <- params$props_NA
+repeat_runs <- params$repeat_runs
+subset <- params$subset
 
 bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
 ```
@@ -102,10 +102,13 @@ data_name <- "nutrimouse"
 
 ```{r nutrimouse-run, eval=params$rerun}
 data("nutrimouse")
+
 dataset <- nutrimouse$gene
-props_NA <- c(0.1, 0.25, 0.4)
-repeat_runs <- 6
 pheno = nutrimouse$diet
+
+props_NA <- params$props_NA
+repeat_runs <- params$repeat_runs
+subset <- params$subset
 
 bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
 ```
@@ -126,11 +129,14 @@ data_name <- "breast.tumors"
 
 ```{r breast-run, eval=params$rerun}
 data("breast.tumors")
+
 dataset <- breast.tumors$gene.exp
-props_NA <- c(0.1, 0.25, 0.4)
-repeat_runs <- 1
-subset <- c(300, 500)
 pheno = breast.tumors$sample$treatment
+
+props_NA <- params$props_NA
+repeat_runs <- params$repeat_runs
+subset <- params$subset
+
 bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
 ```
 
@@ -150,11 +156,13 @@ data_name <- "scnmtseq"
 sce <- sce[,sce$lineage %in% c("Mesoderm", "Endoderm", "Ectoderm")]
 sce <- sce[order(rowVars(logcounts(sce)), decreasing = TRUE),]
 scnmtseq <- logcounts(sce) %>% t() %>% .[,1:2000]
+
 dataset <- scnmtseq
-props_NA <- c(0.1, 0.25, 0.4)
-repeat_runs <- 1
-subset <- c(300, 500)
 pheno = sce$lineage
+
+props_NA <- params$props_NA
+repeat_runs <- params$repeat_runs
+subset <- params$subset
 
 bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
 ```
@@ -165,33 +173,8 @@ show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 2)
 show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
 ```
 
-```{r saveruns, eval=params$rerun}
+```{r saveruns1, eval=params$rerun&params$saveRDS}
 saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
-```
-
-```{r}
-get_datasets_runtimes <- function(propNA, bm_res) {
-  theList <- lapply(bm_res, function(x){
-    summary(x[[propNA]][["microbenchmark"]])[,c("expr","mean")]
-  })
-  rbindListWithNames(theList)
-}
-
-get_all_runtimes <- function(propNA_vec, bm_res) {
-  theList <- lapply(named_list(propNA_vec), function(x) {
-    get_datasets_runtimes(x, bm_res = bm_res)
-  })
-  rbindListWithNames(theList, new_col = "prop_NA")
-}
-
-```
-
-```{r}
-ggplot_all_runtimes <- function(df, ...) {
-  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr, shape = prop_NA), size=3)  +  theme_bw()  + 
-    guides(col = guide_legend(title = "function"), shape = guide_legend(title = "NA proportion"))  + 
-    labs(...)
-}
 ```
 
 ### Runtimes
@@ -201,6 +184,33 @@ df <- get_all_runtimes(propNA_vec = names(bm_datasets_res[[1]])[1:2], bm_res = b
 ggplot_all_runtimes(df, x = "Dataset", y = "Mean Runtime (sec)", title = "NIPALS")
 ```
 
+
+# Epigenome Data
+
+
+```{r epi-data, eval=params$rerun}
+epi_data <- names(mae)[-1] %>% .[!grepl(pattern = "^wt*", .)]
+for (data_name in epi_data) {
+  dataset <- assay(mae, data_name) %>% t()
+  weights <- assay(mae, paste0("wt_",data_name)) %>% t()
+  pheno = mae$day
+  
+  props_NA <- c(0)
+  repeat_runs <- 1
+  subset <- params$subset
+  ncomp = params$nipals_ncomp
+  
+  bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp)
+}
+```
+
+```{r saveruns2, eval=params$rerun&params$saveRDS}
+saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets.rds"))
+```
+
+```{r}
+# show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE)
+```
 
 
 

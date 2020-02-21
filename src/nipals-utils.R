@@ -40,6 +40,7 @@ subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = 
   })
   rows <- sample(x = np_data[1], size = np_subset[1], replace = FALSE)
   cols <- sample(x = np_data[2], size = np_subset[2], replace = FALSE)
+  cols <- cols[colVars(dataset, na.rm = TRUE) > 0]
   
   out <- list(dataset = dataset[rows, cols], pheno = pheno[rows])
   if (!is.null(weights)) {
@@ -69,6 +70,7 @@ benchmark_nipals <-
     tol <- 1e-9
     
     benchmark_nipals_helper <- function(dataset_na, repeat_runs, weights=NULL) {
+      dataset_na <- dataset_na[,colVars(dataset_na, na.rm = TRUE) > 0]
       nipals_nipals <- nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = FALSE, force.na = TRUE)
       ## runtimes
       mb.res_nipals <- microbenchmark(
@@ -222,4 +224,24 @@ benchmark_nipals_across_datasets <- function(datasets, props_NA, phenos, ...) {
   mapply(x = datasets, y = phenos, FUN = function(x, y,  ...) {
     bm_res <- benchmark_nipals(dataset = x, props = props_NA, pheno = y, ...)
   })
+}
+## ------------------------------------------------------------------------ ##
+get_datasets_runtimes <- function(propNA, bm_res) {
+  theList <- lapply(bm_res, function(x){
+    summary(x[[propNA]][["microbenchmark"]])[,c("expr","mean")]
+  })
+  rbindListWithNames(theList)
+}
+
+get_all_runtimes <- function(propNA_vec, bm_res) {
+  theList <- lapply(named_list(propNA_vec), function(x) {
+    get_datasets_runtimes(x, bm_res = bm_res)
+  })
+  rbindListWithNames(theList, new_col = "prop_NA")
+}
+## ------------------------------------------------------------------------ ##
+ggplot_all_runtimes <- function(df, ...) {
+  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr, shape = prop_NA), size=3)  +  theme_bw()  + 
+    guides(col = guide_legend(title = "function"), shape = guide_legend(title = "NA proportion"))  + 
+    labs(...)
 }
