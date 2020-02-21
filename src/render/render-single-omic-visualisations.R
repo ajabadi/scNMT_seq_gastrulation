@@ -13,7 +13,7 @@ library(here)
 # list.files(here("notebook"))
 rmd_file <- here("notebook/single-omic/single-omic-visualisations.Rmd")
 ## source utilities
-sapply(list.files(here('src/utils'), pattern = "*.R", full.names = TRUE), source)
+sapply(list.files(here('src', 'utils'), pattern = "*.R", full.names = TRUE), source)
 ## check/install/load packages
 pkgs <- get_required_pkgs(rmd_file)
 installer(pkgs = pkgs, hpc_libPaths = "~/R_libs", update_all = TRUE, reinstall = NULL)
