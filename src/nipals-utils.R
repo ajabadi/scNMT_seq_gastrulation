@@ -48,7 +48,7 @@ rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
   out
 }
 ## ------------------------------------------------------------------------ ##
-subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = NULL) {
+subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = NULL, top_n = TRUE) {
   dataset <- as.matrix(dataset)
   set.seed(21)
   nzv_cols <- colVars(dataset, na.rm = TRUE) < 1e-3
@@ -60,8 +60,12 @@ subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = 
     y
   })
   rows <- sample(x = np_data[1], size = np_subset[1], replace = FALSE)
+  if (top_n) {
+    cols <- seq_len(np_subset[2])
+  } else {
+    cols <- order(colVars(dataset[rows,], na.rm = TRUE), decreasing = TRUE) <= np_subset[2]
+  }
 
-  cols <- order(colVars(dataset[rows,], na.rm = TRUE), decreasing = TRUE) <= np_subset[2]
 
   nzv_cols <- colVars(dataset[rows, cols], na.rm = TRUE) < 1e-3
   dataset <- dataset[rows,cols][,!nzv_cols]
@@ -87,7 +91,9 @@ benchmark_nipals <-
            reconst = FALSE,
            repeat_runs = 1,
            subset = c(0, 0),
-           pheno=NULL
+           pheno=NULL,
+           top_n = TRUE,
+           microbench = TRUE
   ){
     
     max.iter <- 500
@@ -95,50 +101,63 @@ benchmark_nipals <-
     
     benchmark_nipals_helper <- function(dataset_na, repeat_runs, weights=NULL) {
       dataset_na <- dataset_na[,colVars(dataset_na, na.rm = TRUE) > 0]
-      nipals_nipals <- nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = FALSE, force.na = TRUE)
-      ## runtimes
-      mb.res_nipals <- microbenchmark(
-        "nipals::nipals" = nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = TRUE),
-        times = repeat_runs, unit = "s")
-      
-      mb.class <- class(mb.res_nipals)
-      
-      if (is.null(weights)) {
-        mixOmics_nipals <- mixOmics::nipals(X = dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol)
-        
-        mb.res_mixOmics <- microbenchmark(
-          "mixOmics::nipals" = mixOmics::nipals(dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol),
+      if (microbench) {
+        nipals_nipals <- nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = FALSE, force.na = TRUE)
+        ## runtimes
+        mb.res_nipals <- microbenchmark(
+          "nipals::nipals" = nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = TRUE),
           times = repeat_runs, unit = "s")
-        mb.res <- Reduce(f = rbind, x = list(as.data.frame(mb.res_mixOmics), as.data.frame(mb.res_nipals)))
-        class(mb.res) <- mb.class
+        
+        mb.class <- class(mb.res_nipals)
+        
+        if (is.null(weights)) {
+          mixOmics_nipals <- mixOmics::nipals(X = dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol)
+          
+          mb.res_mixOmics <- microbenchmark(
+            "mixOmics::nipals" = mixOmics::nipals(dataset_na, ncomp = ncomp, reconst = reconst, max.iter = max.iter, tol = tol),
+            times = repeat_runs, unit = "s")
+          mb.res <- Reduce(f = rbind, x = list(as.data.frame(mb.res_mixOmics), as.data.frame(mb.res_nipals)))
+          class(mb.res) <- mb.class
+        } else {
+          nipals_empca <- nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = TRUE)
+          
+          mb.res_empca <- microbenchmark(
+            "nipals::empca" = nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = gramschmidt),
+            times = repeat_runs, unit = "s")
+          
+          mb.res <- Reduce(f = rbind, x = list(as.data.frame(mb.res_empca), as.data.frame(mb.res_nipals)))
+          class(mb.res) <- mb.class
+        }
+        
+        out <- list(
+          dataset = dataset_na,
+          microbenchmark = mb.res,
+          nipals_nipals = nipals_nipals
+        )
+        if (is.null(weights)) {
+          out$mixOmics_nipals <- mixOmics_nipals
+        } else {
+          out$nipals_empca <- nipals_empca
+        }
       } else {
+        nipals_nipals <- nipals::nipals(x = dataset_na, ncomp = ncomp, center = FALSE, scale = FALSE, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = FALSE, verbose = FALSE, force.na = TRUE)
         nipals_empca <- nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = TRUE)
-        
-        mb.res_empca <- microbenchmark(
-          "nipals::empca" = nipals::empca(x = dataset, w = weights, ncomp = ncomp, center = center, scale = scale, maxiter = max.iter, tol = tol, fitted = reconst, gramschmidt = gramschmidt),
-          times = repeat_runs, unit = "s")
-        
-        mb.res <- Reduce(f = rbind, x = list(as.data.frame(mb.res_empca), as.data.frame(mb.res_nipals)))
-        class(mb.res) <- mb.class
+ 
+        out <- list(
+          dataset = dataset_na,
+          nipals_nipals = nipals_nipals,
+          nipals_empca = nipals_empca
+        )
       }
       
-      out <- list(
-        dataset = dataset_na,
-        microbenchmark = mb.res,
-        nipals_nipals = nipals_nipals
-      )
-      if (is.null(weights)) {
-        out$mixOmics_nipals <- mixOmics_nipals
-      } else {
-        out$nipals_empca <- nipals_empca
-      }
+      
       
       ## output
       return(out)
     }
     
     ## ensure subset n, p) is valid
-    subset_res <- subset_please(dataset = dataset, weights = weights, np_subset = subset, pheno = pheno)
+    subset_res <- subset_please(dataset = dataset, weights = weights, np_subset = subset, pheno = pheno, top_n = top_n)
     
     dataset <- subset_res$dataset
     weights <- subset_res$weights
@@ -192,7 +211,10 @@ show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE, empca = 
     res_i <- bm_res[[which]]
     dataset <- res_i[["dataset"]]
     
-    res$benchmark <- show_microbench(res_i[["microbenchmark"]])
+    if (!is.null(res_i[["microbenchmark"]])) {
+      res$benchmark <- show_microbench(res_i[["microbenchmark"]])
+    }
+
     
     if (empca) {
       NA_prop <- sum(is.na(dataset))/prod(dim(dataset))
@@ -241,9 +263,17 @@ show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE, empca = 
     }
     
     if( !is.null(subtitle)) {
-      res[-1] <- lapply(res[-1], function(gg) {
-        gg  +  labs(subtitle = subtitle)
-      })
+      if (!is.null(res_i[["microbenchmark"]])) {
+        res[-1] <- lapply(res[-1], function(gg) {
+          gg  +  labs(subtitle = subtitle)
+        })
+      } else {
+        res <- lapply(res, function(gg) {
+          gg  +  labs(subtitle = subtitle)
+        })
+      }
+      
+
     }
     
     res
@@ -273,7 +303,7 @@ get_all_runtimes <- function(propNA_vec, bm_res) {
 }
 ## ------------------------------------------------------------------------ ##
 ggplot_all_runtimes <- function(df, ...) {
-  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr), size=3)  + facet_grid(.~prop_NA)  +   theme_bw()  + 
+  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr), size=3, alpha = 0.75)  + facet_grid(.~prop_NA)  +   theme_bw()  + 
     guides(col = guide_legend(title = "function"), shape = guide_legend(title = "NA proportion"))  + 
     labs(...)
 }

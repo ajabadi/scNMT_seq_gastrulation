@@ -7,7 +7,7 @@ params:
   nipals_ncomp: 2
   # grad_cols: !r c(low = "darkblue", high = "orange")
   subset: !r c(50, 100)
-  rerun: true
+  rerun: false
   saveRDS: false
   repeat_runs: 1
   props_NA: !r c(0.1, 0.25, 0.4)
@@ -37,7 +37,7 @@ invisible(sapply(list.files(here('src', 'utils'), pattern = "*.R", full.names = 
 
 # Data
 
-```{r load-data, eval=params$rerun}
+```{r load-data}
 # load(url("https://github.com/LuyiTian/sc_mixology/blob/master/data/sincell_with_class.RData?raw=true"))
 # saveRDS(sce_sc_10x_qc, file = here("output", "cellbench-10x.rds"))
 suppressMessages({
@@ -82,7 +82,7 @@ props_NA <- params$props_NA
 repeat_runs <- params$repeat_runs
 subset <- params$subset
 
-bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset, top_n = FALSE)
 ```
 
 ```{r}
@@ -110,7 +110,7 @@ props_NA <- params$props_NA
 repeat_runs <- params$repeat_runs
 subset <- params$subset
 
-bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset, top_n = FALSE)
 ```
 
 ```{r}
@@ -137,7 +137,7 @@ props_NA <- params$props_NA
 repeat_runs <- params$repeat_runs
 subset <- params$subset
 
-bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset, top_n = FALSE)
 ```
 
 ```{r}
@@ -155,7 +155,7 @@ data_name <- "scnmtseq"
 ```{r scnmtseq-run, eval=params$rerun}
 sce <- sce[,sce$lineage %in% c("Mesoderm", "Endoderm", "Ectoderm")]
 sce <- sce[order(rowVars(logcounts(sce)), decreasing = TRUE),]
-scnmtseq <- logcounts(sce) %>% t() %>% .[,1:2000]
+scnmtseq <- logcounts(sce) %>% t()
 
 dataset <- scnmtseq
 pheno = sce$lineage
@@ -164,7 +164,7 @@ props_NA <- params$props_NA
 repeat_runs <- params$repeat_runs
 subset <- params$subset
 
-bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset)
+bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, props = props_NA, pheno = pheno, subset = subset, top_n = FALSE)
 ```
 
 ```{r}
@@ -177,19 +177,32 @@ show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 3)
 saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
 ```
 
-### Runtimes
-
 ```{r}
-df <- get_all_runtimes(propNA_vec = names(bm_datasets_res[[1]])[1:2], bm_res = bm_datasets_res)
-ggplot_all_runtimes(df, x = "Dataset", y = "Mean Runtime (sec)", title = "NIPALS")
+bm_datasets_res <- readRDS(here("output", "nipals-benchmark-results_all-datasets_no-gramschmidt.rds"))
 ```
 
 
+### Runtimes
+
+```{r}
+df <- get_all_runtimes(propNA_vec = names(bm_datasets_res[[1]])[1:3], bm_res = bm_datasets_res)
+ggplot_all_runtimes(df, x = "Dataset", y = "Mean Runtime (sec)", title = "NIPALS")
+```
+
 # Epigenome Data
 
+## runtime with limited number of features
+
+```{r}
+
+```
+
+```{r}
+epi_data <- names(mae)[c(2:5)] %>% .[!grepl(pattern = "^wt*", .)]
+```
 
 ```{r epi-data, eval=params$rerun}
-epi_data <- names(mae)[-1] %>% .[!grepl(pattern = "^wt*", .)]
+epi_data <- names(mae)[c(2:5)] %>% .[!grepl(pattern = "^wt*", .)]
 for (data_name in epi_data) {
   dataset <- assay(mae, data_name) %>% t()
   weights <- assay(mae, paste0("wt_",data_name)) %>% t()
@@ -197,18 +210,29 @@ for (data_name in epi_data) {
   
   props_NA <- c(0)
   repeat_runs <- 1
-  subset <- params$subset
+  subset <- c(0, 300)
   ncomp = params$nipals_ncomp
   
-  bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp)
+  bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp, microbench = TRUE)
   saveRDS(bm_datasets_res[[data_name]], file = here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name)))
 }
 ```
 
 ```{r saveruns2, eval=params$rerun&params$saveRDS}
-saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets.rds"))
+saveRDS(bm_datasets_res[epi_data], file = here("output", "nipals-benchmark-results_epi-data-subset-microbenchmarked.rds"))
 ```
 
+```{r epi-data-benchmark-load, eval=!params$rerun}
+epi_data_res <- readRDS(here("output", "nipals-benchmark-results_epi-data-subset-microbenchmarked.rds"))
+epi_data <- names(epi_data_res)
+bm_datasets_res[epi_data] <- epi_data_res
+rm(epi_data_res)
+```
+
+```{r}
+df <- get_all_runtimes(propNA_vec = names(bm_datasets_res[epi_data][[1]])[1], bm_res = bm_datasets_res[epi_data])
+ggplot_all_runtimes(df, x = "Dataset", y = "Mean Runtime (sec)", title = "NIPALS")
+```
 
 ```{r}
 all_epi_plots <- lapply(named_list(epi_data), function(data_name) {
@@ -216,6 +240,5 @@ all_epi_plots <- lapply(named_list(epi_data), function(data_name) {
 })
 all_epi_plots
 ```
-
 
 
