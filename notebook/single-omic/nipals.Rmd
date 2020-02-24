@@ -201,6 +201,7 @@ for (data_name in epi_data) {
   ncomp = params$nipals_ncomp
   
   bm_datasets_res[[data_name]] <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp)
+  saveRDS(bm_datasets_res[[data_name]], file = here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name)))
 }
 ```
 
