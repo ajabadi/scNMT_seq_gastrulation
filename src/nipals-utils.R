@@ -1,5 +1,21 @@
+
+## ------------------------------------------------------------------------ ##
+calc_na_prop <- function(mat) {
+  mat <- as.matrix(mat)
+  NA_prop <- sum(is.na(mat)) / prod(dim(mat))
+  round(NA_prop, 2)
+}
+## ------------------------------------------------------------------------ ##
 rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
   mat <- as.matrix(mat)
+  
+  if (any(is.na(mat))) {
+    mat_na <- calc_na_prop(mat = mat)
+    message(sprintf("Matrix already contains %s%% NAs\n", 100*mat_na))
+    if (prop > 0 & mat_na > prop)
+      warning(sprintf("matrix already contains %s%% NAs, asked for: %s%%. Setting some NAs to mean.", 100*mat_na , 100*prop))
+  }
+
   if (prop == 0) {
     out <- mat
   } else {
@@ -12,7 +28,9 @@ rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
       ## calculate the total number of NAs
       total_na <- floor(prop*prod(dim(mat)))
       vec <- as.vector(mat)
-      vec[sample(seq_along(vec), size = total_na, replace = FALSE)] <- NA
+      already_na <- is.na(vec)
+      total_na <- total_na - sum(already_na)
+      vec[sample(seq_along(vec)[!already_na], size = total_na, replace = FALSE)] <- NA
       out <- matrix(vec, ncol = ncol(mat), dimnames = dimnames(mat))
       ## make sure no column/row has more than
       repeat_rand <- (max(colSums(is.na(out))) > 0.9*dim(out)[1]) | (max(rowSums(is.na(out))) > 0.9*dim(out)[2])
@@ -31,7 +49,10 @@ rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
 }
 ## ------------------------------------------------------------------------ ##
 subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = NULL) {
+  dataset <- as.matrix(dataset)
   set.seed(21)
+  nzv_cols <- colVars(dataset, na.rm = TRUE) < 1e-3
+  dataset <- dataset[,!nzv_cols]
   np_data <- dim(dataset)
   np_subset <- mapply(x = np_data, y = np_subset, FUN = function(x, y){
     if (y == 0 | y > x) 
@@ -39,10 +60,13 @@ subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = 
     y
   })
   rows <- sample(x = np_data[1], size = np_subset[1], replace = FALSE)
-  cols <- sample(x = np_data[2], size = np_subset[2], replace = FALSE)
-  cols <- cols[colVars(dataset, na.rm = TRUE) > 0]
+
+  cols <- order(colVars(dataset[rows,], na.rm = TRUE), decreasing = TRUE) <= np_subset[2]
+
+  nzv_cols <- colVars(dataset[rows, cols], na.rm = TRUE) < 1e-3
+  dataset <- dataset[rows,cols][,!nzv_cols]
   
-  out <- list(dataset = dataset[rows, cols], pheno = pheno[rows])
+  out <- list(dataset = dataset, pheno = pheno[rows])
   if (!is.null(weights)) {
     out$weights <- weights[rows, cols]
   }
@@ -141,14 +165,17 @@ plot_helper <- function(df, comps = c(1,2), title = NULL) {
   
   if ("pheno" %in% colnames(df)) {
     p <- p  +  geom_point(aes_string(x = axes[1], y = axes[2], col = "pheno"))  + 
-      guides(col = guide_legend("Phenotype"))
+      guides(col = guide_legend(title = "Phenotype"))
+    if (is.numeric(df$pheno)){
+      p <- p  +  scale_color_gradient(low = "darkblue", high = "orange")
+    }
   } else {
     p <- p  +  geom_point(aes_string(x = axes[1], y = axes[2]))
   }
   p
 }
 ## ------------------------------------------------------------------------ ##
-show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE, empca = FALSE) {
+show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE, empca = FALSE, subtitle = NULL) {
   if (is(bm_res[[which]], "error")) {
     cat("This run has encountered error due to abundance of NAs")
   } 
@@ -212,7 +239,12 @@ show_benchmark_res <- function(bm_res, which=1, comps=c(1,2), col=TRUE, empca = 
       if (grepl("0$", x = title)) title <- NULL
       res$nipals <- plot_helper(nipals_df, comps=comps, title = title)
     }
-
+    
+    if( !is.null(subtitle)) {
+      res[-1] <- lapply(res[-1], function(gg) {
+        gg  +  labs(subtitle = subtitle)
+      })
+    }
     
     res
   }
@@ -241,7 +273,7 @@ get_all_runtimes <- function(propNA_vec, bm_res) {
 }
 ## ------------------------------------------------------------------------ ##
 ggplot_all_runtimes <- function(df, ...) {
-  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr, shape = prop_NA), size=3)  +  theme_bw()  + 
+  ggplot(df, aes(x = factor(dataset), y = mean))  +  geom_point(aes(col = expr), size=3)  + facet_grid(.~prop_NA)  +   theme_bw()  + 
     guides(col = guide_legend(title = "function"), shape = guide_legend(title = "NA proportion"))  + 
     labs(...)
 }
