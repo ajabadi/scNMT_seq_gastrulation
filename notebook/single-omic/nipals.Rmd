@@ -208,8 +208,12 @@ for (data_name in epi_data) {
 saveRDS(bm_datasets_res, file = here("output", "nipals-benchmark-results_all-datasets.rds"))
 ```
 
+
 ```{r}
-# show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE)
+all_epi_plots <- lapply(named_list(epi_data), function(data_name) {
+  show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE, subtitle = data_name)
+})
+all_epi_plots
 ```
 
 
