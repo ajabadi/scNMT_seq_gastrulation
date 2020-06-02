@@ -1,0 +1,288 @@
+---
+title: "DIABLO using rna, promoter and CTCF"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(mixOmics)
+library(here)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = FALSE)
+```
+
+
+```{r}
+source(here("src/source-utils.R"))
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+gastru.mae
+```
+
+```{r}
+make_unique_features <- function(mae) {
+  expers <- experiments(mae)
+  expers_names <- names(expers)[-1]
+  for (i in expers_names) {
+      rownames(expers[[i]]) <- paste0(rownames(expers[[i]]),'_', i)
+  }
+  MultiAssayExperiment(experiments = expers, colData = colData(mae))
+}
+```
+
+```{r}
+gastru.mae <- make_unique_features(gastru.mae)
+```
+
+
+```{r}
+feature_names_are_unique <- function(mae) {
+  expers <- experiments(mae)[1:13]
+  expers_names <- names(expers)
+  no_dups <- TRUE
+  for (i in expers_names) {
+    for (j in expers_names) {
+      if (i  !=  j) {
+        common_rownames <- intersect(rownames(expers[[i]]), rownames(expers[[j]]))
+        if (length(common_rownames)) {
+          warning(sprintf("Common rownames for %s and %s \n", i, j))
+          no_dups <- FALSE
+        }
+      }
+    }
+  }
+  if (no_dups) {
+    message("no duplicates")
+  }
+}
+```
+
+
+```{r}
+feature_names_are_unique(gastru.mae)
+```
+
+
+## Last Stage
+
+```{r}
+gastru.mae_E7.5 <- gastru.mae[,gastru.mae$day == 7.5 & !is.na(gastru.mae$lineage10x_2),]
+```
+
+```{r}
+expr <- t(assay(gastru.mae_E7.5, "rna"))
+expr_umap <- umap::umap(expr, method = "umap-learn", n_components = 3, metric = "euclidean", n_neighbors = 30)
+```
+```{r}
+plot_umap <- function(umap_out, gastru.mae = gastru.mae_E7.5, col = "lineage", comps = c(1,2), title = NULL, gradient_cols = NULL){
+  library(ggplot2)
+  df <- data.frame(umap_out$layout)
+  colnames(df) <- paste0("UMAP_",seq_len(dim(df)[2]))
+  df$stage <- gastru.mae$day
+  df$lineage <- gastru.mae$lineage10x_2
+  df$stage_lineage <- gastru.mae$stage_lineage
+  
+  comps <- paste0("UMAP_", comps)
+  p <- ggplot(df, aes_string(comps[1], comps[2], col = col))  + geom_point(alpha = 0.5) +  theme_bw()  +  guides(col = guide_legend(title = col))
+  
+  p <- p  + theme(legend.position = "bottom", legend.title=element_text(size=14))  + 
+    labs(title = title)
+  
+   if (is.character(gradient_cols) && length(gradient_cols) == 2)
+     p <- p  +  scale_color_gradient(low = gradient_cols["low"], high = gradient_cols["high"])
+  
+  p
+}
+```
+```{r}
+plot_umap(expr_umap)
+plot_umap(expr_umap, comps = c(2,3))
+```
+## sPLSDA ( Y ~ rna)
+
+```{r}
+tune_splsda_mae <- function(mae, omic, Y, ncomp, test.keepX, folds, nrepeat) {
+  X <- t(assay(mae, omic))
+  if (is.null(Y)) {
+    Y <- factor(mae$lineage10x_2)
+  }
+  tune.splsda(X = X, Y = Y, ncomp = ncomp, test.keepX = test.keepX, folds = folds, nrepeat = nrepeat, scale = FALSE, cpus = parallel::detectCores(), auc = TRUE)
+}
+```
+
+Use more components than Y levels for tuning:
+
+```{r}
+tune.rna.res <- tune_splsda_mae(mae = gastru.mae_E7.5, omic = "rna", Y = NULL, ncomp = length(unique(gastru.mae_E7.5$lineage10x_2)) + 3, folds = 3, nrepeat = 3, test.keepX = c(5, 10, 20, 50))
+```
+
+```{r}
+saveRDS(tune.rna.res, file = here('output/tune-splsda-rna-scaleFalse-res.rds'))
+```
+```{r}
+tune.rna.res <- readRDS(here('output/tune-splsda-rna-scaleFalse-res.rds'))
+```
+
+
+```{r}
+tune.rna.res$choice.ncomp
+tune.rna.res$error.rate.class
+```
+
+```{r}
+splsda_mae <- function(mae, omic, Y, tune.res) {
+    X <- t(assay(mae, omic))
+  if (is.null(Y)) {
+    Y <- factor(mae$lineage10x_2)
+  }
+    ncomp <- tune.res$choice.ncomp$ncomp
+    keepX <- tune.rna.res$choice.keepX[seq_len(ncomp)]
+    splsda(X = X, Y = Y, ncomp = ncomp, keepX = keepX, scale = FALSE, near.zero.var = TRUE)
+}
+```
+
+```{r}
+splsda.res <- splsda_mae(mae = gastru.mae_E7.5, omic = "rna", Y = NULL, tune.res = tune.rna.res)
+```
+
+```{r}
+plotIndiv(splsda.res, pch=16, legend = TRUE, legend.title = "Lineage")
+```
+
+Now a block with only another 'Omic and look at error rates for classes:
+
+
+```{r}
+res <- tune.splsda(X = X, Y = Y, ncomp = ncomp, test.keepX = test.keepX, folds = 3, nrepeat = 3)
+```
+
+```{r}
+res$error.rate
+```
+
+
+```{r}
+run_splsda <- function(mae = gastru.mae_E7.5, assay = "rna", Y = NULL, ncomp=2, keepX = 50) {
+  
+  
+    if (is.null(Y)) {
+    Y <- mae$lineage10x_2
+    }
+  res <- splsda()
+}
+```
+
+
+## run DIABLO
+
+
+```{r}
+tune_diablo_mae <- function(mae, design, ncomp = 2, test.keepX = c(5, seq(10, 50, 10)), Y = NULL, mode = "canonical", folds = NULL, impute_means = TRUE) {
+  
+  if (is.null(Y)) {
+    Y <- mae$stage
+  }
+  
+  if (is.null(folds) || min(table(Y)) < folds ) {
+    folds <- min(5, min(table(Y)))
+  }
+  X <- lapply(as.list(experiments(study_mae)), t)
+  if (impute_means) {
+    X <- lapply(X, impute_by_means)
+  }
+  test.keepX <- lapply(X, function(x) test.keepX)
+  
+  tune_diablo_res <- tune.block.splsda(X = X, Y = Y, ncomp = ncomp, test.keepX = test.keepX,  design = design, validation = "Mfold", folds = folds, weighted = TRUE, dist = "max.dist"
+                                       # , cpus = detectCores()
+  )
+  tune_diablo_res
+}
+```
+
+
+```{r}
+folds <- 5
+test.keepX = c(5,seq(10,50,10))
+ncomp = 2
+if (params$on_mac) {
+  folds <- 2
+  test.keepX = c(1,2)
+  ncomp = 2
+}
+design <- create_design(mae = study_mae, off_diag = 0.5, rna_only = TRUE)
+tune_diablo_res <- tune_diablo_mae(mae = study_mae, design = design, ncomp = ncomp, test.keepX = test.keepX, Y = NULL, mode = "canonical", folds = folds, impute_means = TRUE)
+saveRDS(tune_diablo_res, file = here(sprintf("output/tune-diablo_%s.rds", paste0(study_assays, collapse = "-"))))
+```
+
+
+```{r}
+## diablo
+run_diablo_mae <- function(mae, design_off_diag = 0.5, rna_only = TRUE, ncomp = 2, keepX = c(25, 25), Y = NULL, mode = "canonical") {
+
+  if (is.null(Y)) {
+    Y <- mae$lineage10x_2
+  }
+  design <- create_design(mae = mae, off_diag = design_off_diag)
+  X <- lapply(as.list(experiments(study_mae)), t)
+  keepX <- create_keepX(mae, keepX = keepX)
+
+  diablo_res <- block.splsda(X = X, Y = Y, ncomp = ncomp, keepX = keepX, mode = mode, design = design)
+  diablo_res
+}
+## block.spls
+run_spls_mae <- function(mae, design_off_diag = 0.5, rna_only = TRUE, ncomp = 2, keepX = c(25, 25), Y = NULL, mode = "canonical") {
+  mae$stage_num <- as.numeric(gsub("E", "", mae$stage))
+  if (is.null(Y)) {
+    Y <- as.matrix(mae$stage_num)
+  }
+  design <- create_design(mae = mae, off_diag = design_off_diag, rna_only = rna_only)
+  X <- lapply(as.list(experiments(study_mae)), t)
+  keepX <- create_keepX(mae, keepX = keepX)
+
+  diablo_res <- block.spls(X = X, Y = Y, ncomp = ncomp, keepX = keepX, mode = mode, design = design)
+  diablo_res
+}
+```
+
+<!-- ```{r} -->
+<!-- diablo_res <- run_diablo_mae(mae = study_mae) -->
+<!-- ``` -->
+<!-- ```{r} -->
+<!-- block.spls_res <- run_spls_mae(mae = study_mae) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- design <- 0.5*(1-diag(length(study_mae))) -->
+<!-- keepX <- c(5,10) -->
+<!-- runtimes$gastru$tuno_diablo <- system.time({ -->
+<!--   tune_diablo_res <- -->
+<!--     tune.block.splsda( -->
+<!--       X = X, -->
+<!--       Y = study_mae$lineage10x_2, -->
+<!--       ncomp = 2, -->
+<!--       test.keepX = create_keepX(study_mae, keepX = keepX), -->
+<!--       design = design, -->
+<!--       cpus = parallel::detectCores() -->
+<!--     ) -->
+<!-- }) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- if (params$on_hpc) { -->
+<!--   saveRDS2(tune_diablo_res, file = here("output/tune_diablo_res.rds"), suffix = "auto", log = paste0(study_assays, collapse = ", ")) -->
+<!-- } -->
+<!-- ``` -->

@@ -1,0 +1,239 @@
+---
+title: "block.spls scores on umap"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(mixOmics)
+library(here)
+library(knitr)
+```
+
+
+```{r, echo=FALSE}
+knitr::opts_chunk$set(eval = TRUE, cache = !FALSE, warning = FALSE, out.width = "100%")
+```
+
+
+```{r}
+source(here("src/source-utils.R"))
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+gastru.mae <- gastru.mae[,!is.na(gastru.mae$lineage10x_2) & ! (gastru.mae$lineage10x_2 %in% c("ExE_ectoderm", "Visceral_endoderm")) & (gastru.mae$stage == 'E7.5'),]
+```
+
+
+check column names are consistent:
+
+```{r}
+all_identical(colnames(gastru.mae))
+```
+
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
+```{r}
+load('/Users/alabadi/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/notebook/integration/block-spls/rna-gene-symbols.RData')
+ensemble2symbol <- symbols
+```
+
+```{r}
+# rownames(rna) <- toupper(make.unique(symbols[rownames(rna),1]))
+```
+
+
+# block.splsda(epigenome ~ annotations)
+
+
+
+## designate assays
+
+```{r}
+study_assays <- c("acc_promoter", "met_promoter", "met_genebody","acc_genebody", "acc_p300",  "met_p300")
+# study_assays <- c("rna", "met_genebody", "met_promoter", "met_cgi",  "acc_promoter", "acc_cgi",  "acc_p300", "acc_CTCF", "acc_DHS")
+```
+
+
+```{r}
+study_mae <- gastru.mae[,,study_assays]
+# study_mae <- study_mae[,(study_mae$day %in%  c(4.5, 7.5)) 
+#                        # & (study_mae$lineage10x_2 %in% c("Epiblast", "Mesoderm", "Endoderm", "Ectoderm"))
+#                       ,]
+coldata <- data.frame(colData(study_mae))
+# coldata$lineage10x_2[is.na(coldata$lineage10x_2)] <- "Unknown"
+```
+
+## run block.splsda
+```{r}
+X <- lapply(as.list(experiments(study_mae)), t)
+X <- suffix_colnames(X, indices = seq_along(X))
+
+# if (params$on_mac) {
+#   X <- lapply(X,  subset_pn, p=2000)
+# }
+lapply(X, dim)
+Y <- t(assay(gastru.mae, 'rna'))
+```
+
+
+```{r, eval=params$on_hpc}
+design <- create_design(mae = study_mae, off_diag = 0)
+ncomp <- 4
+keepX <- lapply(X, function(x){
+  p <- dim(x)[2]
+  keepx <- ifelse(p > 500, 50, 20)
+  rep(keepx, ncomp)
+  
+})
+
+block.spls.E7.5.res <- block.spls(X = X, Y = Y, ncomp = ncomp, keepX = keepX, scale = TRUE)
+saveRDS(block.spls.E7.5.res, file = here("output/block.spls.E7.5.res.rds"))
+```
+
+```{r}
+block.spls.res <- readRDS(here("output/block.spls.E7.5.res.rds"))
+```
+
+
+```{r}
+library(data.table)
+coldata_dt <- data.table(coldata, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
+selected_features <- selectVar(block.spls.res)[[omic]]$value
+```
+
+### mean rate for selected features by stage
+
+#### met_promoter
+
+```{r}
+boxplot_means_diablo(diablo_obj = block.spls.E7.5.res, omic = "met_promoter", comp = 1, coldata = coldata, x_lab = "Embryonic Stage", y_lab = "mean promoter methylation",by_pheno = 'lineage10x_2', sign = 'all')
+```
+
+#### acc_promoter
+
+```{r}
+boxplot_means_diablo(diablo_obj = block.spls.E7.5.res, omic = "acc_promoter", comp = 1, coldata = coldata, x_lab = "Embryonic Stage", y_lab = "mean promoter accessibility",by_pheno = 'lineage10x_2', sign = 'positive')
+```
+
+
+```{r}
+
+enrichment.parametric.acc_promoter <- run_enrichment2_diablo(diablo_obj = block.spls.E7.5.res, block = "acc_promoter", sign = 'positive', comps = 1,  feature.sets = MSigDB_v6.0_C5_mouse,
+            set.statistic = "mean.diff",
+            statistical.test = "parametric",
+            min.size = 10,
+            nperm = 1000,
+            cores = 1,
+            p.adj.method = "BH",
+            alpha = 0.1)
+# boxplot_means(omic = "met_p300", x_lab = "Embryonic Stage", y_lab = "mean promoter methylation", ,by_pheno = 'lineage10x_2', sign = '+')
+```
+
+```{r}
+plot_enrichment_heatmap(enrichment.parametric.diablo)
+
+
+plot_enrichment(enrichment.parametric.diablo, 
+                factor = 2, 
+                max.pathways = 20
+)
+
+
+plot_enrichment_detailed(enrichment.parametric.diablo, 
+                         factor = 1, 
+                         max.genes = 8, 
+                         max.pathways = 5
+)
+```
+
+#### met_genebody
+
+
+```{r}
+boxplot_means_diablo(diablo_obj = block.spls.E7.5.res, omic = "met_genebody", comp = 1, coldata = coldata, x_lab = "Embryonic Stage", y_lab = "mean promoter methylation",by_pheno = 'lineage10x_2', sign = 'all')
+enrichment.parametric.diablo <- run_enrichment2_diablo(diablo_obj = block.spls.E7.5.res, block = "met_genebody", comps = 1,  feature.sets = MSigDB_v6.0_C5_mouse,
+            set.statistic = c("mean.diff",
+                              "rank.sum"),
+            statistical.test = c("parametric", "cor.adj.parametric",
+                                 "permutation"),
+            sign = c("all", "positive", "negative"),
+            min.size = 10,
+            nperm = 1000,
+            cores = 1,
+            p.adj.method = "BH",
+            alpha = 0.1)
+# boxplot_means(omic = "met_p300", x_lab = "Embryonic Stage", y_lab = "mean promoter methylation", ,by_pheno = 'lineage10x_2', sign = '+')
+```
+
+```{r}
+plot_enrichment_heatmap(enrichment.parametric.diablo)
+
+
+plot_enrichment(enrichment.parametric.diablo, 
+                factor = 2, 
+                max.pathways = 20
+)
+
+
+plot_enrichment_detailed(enrichment.parametric.diablo, 
+                         factor = 1, 
+                         max.genes = 8, 
+                         max.pathways = 5
+)
+```
+
+
+#### met_promoter
+
+```{r}
+boxplot_means(omic = "met_promoter", x_lab = "Embryonic Stage", y_lab = "mean promoter methylation")
+```
+
+#### met_genebody
+
+```{r}
+boxplot_means(omic = "met_genebody", x_lab = "Embryonic Stage", y_lab = "mean genebody methylation")
+```
+
+#### acc_p300
+
+```{r}
+boxplot_means(omic = "acc_p300", x_lab = "Embryonic Stage", y_lab = "mean enhancer accessibility")
+```
+
+#### acc_DHS
+
+```{r}
+boxplot_means(omic = "acc_p300", x_lab = "Embryonic Stage", y_lab = "mean DHS accessibility")
+```
+
+# GSEA
+
+https://raw.githack.com/bioFAM/MOFA2/master/MOFA2/vignettes/GSEA.html
+
+
+```{r}
+library(data.table)
+library(purrr)
+library(ggplot2)
+library(cowplot)
+library(MOFAdata)
+```
+
+```{r}
+
+```
+

@@ -1,0 +1,127 @@
+---
+title: "Single Omics"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+  nipals_ncomp: 20
+  grad_cols: !r c(low = "darkblue", high = "orange")
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(here)
+library(ggplot2)
+library(kableExtra)
+```
+
+
+## utils
+
+```{r utls}
+## ----------- source utils ----------- 
+## list all R files in utils folder recursively
+utls <- list.files(file.path(io$home, "src/utils"), pattern = ".R", full.names = TRUE, recursive = TRUE)
+## source all
+invisible(sapply(utls, source))
+```
+
+# Data
+
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+# gastru.mae <- gastru.mae[,!is.na(gastru.mae$lineage10x_2) & gastru.mae$lineage10x_2 %in% c("Epiblast", "Mesoderm", "Endoderm", "Ectoderm"),]
+gastru.mae <- gastru.mae[,!is.na(gastru.mae$lineage10x_2) & ! (gastru.mae$lineage10x_2 %in% c("ExE_ectoderm")),]
+```
+
+
+check column names are consistent:
+
+```{r}
+all_identical(colnames(gastru.mae))
+```
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
+```{r}
+library(kableExtra)
+dt <- table(coldata$lineage10x_2, coldata$stage)
+dt
+# pdf(width = 4, height = 2, file = 'cells-by-days-and-lineages.pdf')
+kb <- dt %>% kable() %>% kable_styling(bootstrap_options = c("striped"), font_size = 38)
+save_kable(kb, file = 'cell-breakdown.pdf')
+# dev.off()
+# %>% kable_as_image(filename = 'cells-by-days-and-lineages', file_format = 'pdf')
+```
+
+## Covergae
+
+```{r}
+
+modes <- names(gastru.mae)
+modes <- modes[grepl(pattern = '^acc', modes) | grepl(pattern = '^met', modes)]
+coverages <- lapply(named_list(modes), function(assay_name) {
+  mat <- assay(gastru.mae, assay_name)
+  NAs <- rowSums(!is.na(mat))/dim(mat)[2]*100
+  data.frame(nNAs=NAs)
+  # ggplot() + geom_density(aes(x = NAs, fill = 'foo'), show.legend = FALSE) +
+  #   labs(x = '% of cells detecting the feature', title = assay_name)
+})
+coverages <- rbindListWithNames(coverages)
+dput(unique(coverages$dataset))
+coverages$dataset <- factor(coverages$dataset, levels = coverages$dataset, ordered = TRUE)
+```
+
+```{r}
+pdf('covplots.pdf', width = 12, height = 6)
+ggplot(coverages, aes(x = nNAs)) + geom_density(fill = 'lightblue', show.legend = FALSE) +
+    labs(x = '% of cells detecting the feature') + facet_wrap(.~dataset, nrow = 2)
+dev.off()
+```
+
+## Dimensions
+
+```{r}
+modes <- c('rna', 'met', 'acc')
+
+modes = paste0('^', modes)
+modalities <- sapply(names(gastru.mae), function(assay_name) {
+  any(sapply(modes, function(mode) {
+    grepl(mode, assay_name)
+  }))
+})
+
+dims <- lapply(experiments(gastru.mae[,,modalities]), dim)
+
+df <- t(data.frame(dims))
+colnames(df) <- c('P', 'N')
+kb <- df%>% kable() %>% kable_styling(bootstrap_options = c("striped"), font_size = 42)
+kb
+
+save_kable(kb, file = 'dims.pdf')
+
+```
+
+## Heatmap Visuals
+
+```{r}
+create_heatmap(1/t(assay(gastru.mae, 'wt_met_promoter'))[1:50, 1:400], legend.title = '        ', NA_color = 'white')
+create_heatmap(t(assay(gastru.mae, 'met_promoter'))[1:50, 1:400], legend.title = '        ', NA_color = 'white')
+```
+```{r}
+library(egg)
+p1 <- create_heatmap(1/assay(gastru.mae, 'wt_met_promoter')[1:400, 1:50], legend.title = 'Variance of Estimation', NA_color = 'white') + theme(plot.margin = unit(c(1,1,1,1), "cm"))
+p2 <- create_heatmap(assay(gastru.mae, 'met_promoter')[1:400, 1:50], legend.title = 'Methylation', NA_color = 'white') + theme(plot.margin = unit(c(1,1,1,1), "cm"))
+pdf('figures/heatmaps-promoter.pdf', width = 8, height = 12)
+ggarrange(p1, ggplot()+theme_void() ,p2, ncol = 1)
+dev.off()
+```
+
+
+

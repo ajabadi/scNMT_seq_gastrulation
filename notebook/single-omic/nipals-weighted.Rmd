@@ -6,11 +6,12 @@ params:
   on_mac: !r Sys.info()['user'] == 'alabadi'
   nipals_ncomp: 2
   # grad_cols: !r c(low = "darkblue", high = "orange")
-  subset: !r c(50, 100)
-  rerun: true
+  subset: !r c(0, 0)
+  rerun: false
   saveRDS: false
   repeat_runs: 1
-  props_NA: !r c(0.1, 0.25, 0.4)
+  props_NA: !r c(0)
+  scale: FALSE
 output:
   html_document:
     toc: true
@@ -68,30 +69,61 @@ bm_datasets_res[epi_data] <- mclapply(named_list(epi_data), FUN = function(data_
   subset <- params$subset
   ncomp = params$nipals_ncomp
   
-  res <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp, microbench = FALSE)
+  res <- benchmark_nipals(dataset = dataset, weights = weights, props = props_NA, pheno = pheno, subset = subset, ncomp = ncomp, microbench = FALSE, scale = params$scale)
   out_file <- here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name))
   if(dir.exists(dirname(out_file))) {
-    saveRDS(bm_datasets_res[[data_name]], file = here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name)))
+    saveRDS(res, file = here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name)))
   }
   res
 }, mc.cores = detectCores())
 
 ```
 
+```{r epi-data-read, eval=FALSE}
+# bm_datasets_res <- list()
+# epi_data <- names(mae)[-1] %>% .[!grepl(pattern = "^wt*", .)]
+# for (data_name in epi_data) {
+#   bm_datasets_res[[data_name]] <- readRDS(here("output", "tmp", sprintf("nipals-benchamrk-%s.rds", data_name)))
+# }
+```
+
 ```{r}
-empca_rds_name <- here("output", sprintf("empca-vs-nipals-for-gastru-data_top-%s-features.rds", params$subset[2]))
+scaled <- ifelse(params$scale, "scaled", "unscaled")
+empca_rds_name <- here("output", sprintf("empca-vs-nipals-for-gastru-data_top-%s-features-%s.rds", params$subset[2], scaled))
 ```
 
 ```{r saveruns2, eval=params$rerun&params$saveRDS}
 saveRDS(bm_datasets_res[epi_data], file = empca_rds_name)
 ```
 
-```{r}
-# all_epi_plots <- lapply(named_list(epi_data), function(data_name) {
-#   show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE, subtitle = data_name)
-# })
-# all_epi_plots
+## EMPCA vs NIPALS
+
+```{r, eval=!params$rerun}
+empca_rds_name <- list.files(here("output"), pattern = "^empca-vs", full.names = TRUE)[1]
+bm_datasets_res <- readRDS(empca_rds_name)
 ```
 
 
+```{r, eval=!params$rerun}
+all_epi_plots <- lapply(named_list(names(bm_datasets_res)), function(data_name) {
+  show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE, subtitle = data_name)
+})
+all_epi_plots
+```
+
+## Scale Weights
+
+
+```{r, eval=!params$rerun}
+empca_rds_name <- list.files(here("output"), pattern = "^empca-vs.*unscaled*", full.names = TRUE)[1]
+bm_datasets_res <- readRDS(empca_rds_name)
+```
+
+
+```{r, eval=!params$rerun}
+all_epi_plots <- lapply(named_list(names(bm_datasets_res)), function(data_name) {
+  show_benchmark_res(bm_res = bm_datasets_res[[data_name]], which = 1, empca = TRUE, subtitle = data_name)
+})
+all_epi_plots
+```
 

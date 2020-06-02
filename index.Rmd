@@ -13,6 +13,45 @@ knitr::opts_chunk$set(cache = params$cache)
 
 This analysis build on: https://github.com/BIRSBiointegration/Hackathon/tree/master/scNMT-seq
 
+# Analyses
+
+## Preprocessing (post-hackathon submission changes to MAE)
+
+* [RNA gene filtering based on expression](notebook/preprocessing/preprocessing.html)
+  - RNA features were required to be expressed in 1% of the cells
+  - RNA features were ordered based on variance
+  - Added a numeric `day` column data to MAE as embryonic day
+
+## Single Omics
+
+## NIPALS
+
+* [nipals performance](notebook/single-omic/nipals.html)
+* [NIPALS Weights](notebook/single-omic/nipals.html)
+* [nipals vs weighted niplas (empca)](notebook/single-omic/nipals-weighted.html)
+* WPCA
+```{r, eval=FALSE}
+library(matconv)
+mat2r("src/weighted-pca.m", pathOutR = "src/weighted.pca.R")
+source("src/weighted.pca.R")
+```
+
+## Imputation
+
+* [imputation benchmarkig using means vs NIPALS](notebook/imputation.html)
+* [impute MAE](notebook/imputation.html)
+
+## Integration
+
+* [Block.spls with both stage and lineage](notebook/integration/rna-promoter-p300-block-splsda.html)
+* [block.spls - RNA - promoters - enhancers - DHS](notebook/rna-promoter-p300-block-spls.html)
+* [sPLSDA](notebook/rna-promoter-p300-block-splsda.html)
+* [DIABLO - RNA - promoters - enhancers - DHS (markers + error rates)](notebook/rna-promoter-p300-block-splsda.html)
+
+* [MOFA: RNA - promoters - enhancers (markerss)](notebook/)
+* [k-means silhouette/purity using block.spls RNA ~ promoters + enhancers vs MOFA variates ](notebook/)
+
+
 # Summary
 
 ## Single Omic
@@ -39,7 +78,14 @@ in methylation in promoter and genebody, and accessibility in P300 and DHS sites
 
 # TO Do
 
-* Weighted nipals (`empca`)
+* Predicting active enhancers from acc/met data: sPLS(HVGs ~ HV_acc/met_sites) -> see if they're close
+  https://tspace.library.utoronto.ca/handle/1807/96114
+  network of relevance for variables coloring known relationships
+  
+* HMM for imputation of acc/met data , compare with DeepCpG for met
+* Ordinal PLS for stage data
+
+* Weighted nipals (`empca`) with a way to
 * UMAP using NIAPLS PCs - customise UMAP `umap.defaults` from https://umap-learn.readthedocs.io/en/latest/api.html DONE
 * block.spls with stage as continuous y and finding developmental signature DONE
 
@@ -50,7 +96,9 @@ in methylation in promoter and genebody, and accessibility in P300 and DHS sites
 
 * commit changes so tracking is easier
 * A way/function to get consistent sample names for assays when creating the diablo's X for rna-promoter-p300-diablo.Rmd and others >> how did Lucy do it? Or how did we do it in the 'explore' file?
-
+ * PLS Ordinal for stage data - compare with trajectory (there'll be lineages within days though - day-specific and stage-specific trends) https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5794891/
+ 
+ 
 # Done
 
 # Directions
@@ -64,26 +112,3 @@ in methylation in promoter and genebody, and accessibility in P300 and DHS sites
 
 i) Compare ARI and other benchmarking metrics in https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1850-9 using KNN with stages/lineages as 
 
-# Preprocessing (post-hackathon submission changes to MAE)
-
-* ![RNA gene filtering based on expression](notebook/preprocessing/preprocessing.html)
-  - RNA features were required to be expressed in 1% of the cells
-  - RNA features were ordered based on variance
-  - Added a numeric `day` column data to MAE as embryonic day
-
-# Single Omics
-
-* 
-
-# Imputation
-
-* [imputation benchmarkig using means vs NIPALS](notebook/imputation.html)
-* [impute MAE](notebook/imputation.html)
-
-# Integration
-
-* [block.spls - RNA - promoters - enhancers - DHS](notebook/rna-promoter-p300-block-spls.html)
-* [DIABLO - RNA - promoters - enhancers - DHS (markers + error rates)](notebook/rna-promoter-p300-block-splsda.html)
-
-* [MOFA: RNA - promoters - enhancers (markerss)](notebook/)
-* [k-means silhouette/purity using block.spls RNA ~ promoters + enhancers vs MOFA variates ](notebook/)

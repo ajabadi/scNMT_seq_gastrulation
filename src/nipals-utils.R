@@ -48,6 +48,25 @@ rand_na <- function(mat=matrix(1:100, ncol = 20), prop=0.3){
   out
 }
 ## ------------------------------------------------------------------------ ##
+#' @title subset data/weight/metadata of a N_samples x P_features assay
+#'
+#' @description Also will remove near-zero-variance features/columns.
+#' The subsetting is subject to data dimensions.
+#' 
+#' @param dataset Numeric array, N x P, could include NAs
+#' @param weights Numeric array, N x P, could include NAs
+#' @param np_subset Numeric vector of length 2 \code{c(N_subset, P_subset)}
+#' @param pheno Vector of length N of phenotypes
+#' @param top_n Logical, if TRUE, chooses the top P features in matrix,
+#' otherwise will sort based on variance and then subset
+#'
+#' @return A list:
+##' \itemize{
+##'  \item{"dataset"}{subsetted dataset}
+##'  \item{"weights"}{subsetted weights}
+##'  \item{"pheno"}{subsetted pheno}
+##' }
+
 subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = NULL, top_n = TRUE) {
   dataset <- as.matrix(dataset)
   set.seed(21)
@@ -70,14 +89,39 @@ subset_please <- function(dataset, weights = NULL, np_subset = c(0, 0), pheno = 
   nzv_cols <- colVars(dataset[rows, cols], na.rm = TRUE) < 1e-3
   dataset <- dataset[rows,cols][,!nzv_cols]
   
-  out <- list(dataset = dataset, pheno = pheno[rows])
+  out <- list(dataset = dataset)
   if (!is.null(weights)) {
     out$weights <- weights[rows, cols]
   }
+  out$pheno <- pheno[rows]
   return(out)
 }
 ## ------------------------------------------------------------------------ ##
-
+#' subset MAE data, weights and colData
+#'
+#'Get MAE object, assay name (for which there's a wt_${assay_name} weights assay), 
+#'phenotype column (could be NULL) and NxP subset indices
+#'
+#' @param mae 
+#' @param assay_name 
+#' @param pheno 
+#' @param subset 
+#'
+#' @return List of subsetted NxP data, weights and phenotype data
+get_assay_subset <- function(mae, assay_name, pheno=1, subset=c(0,0)) {
+  
+  subset_array <- function(array, subset) {
+    array[seq_len(subset[1]), seq_len(subset[2])]
+  }
+  
+  assay <- assay(mae, assay_name) %>% t()
+  weights <- assay(mae, sprintf('wt_%s', assay_name)) %>% t()
+  subset <- mapply(FUN = function(x, y) if ( x > 0 && x < y) x else y, x = subset, y = dim(assay), SIMPLIFY = "numeric")
+  pheno <- as.data.frame(colData(mae)[,pheno][seq_len(subset[1]),])
+  dataset = subset_array(assay, subset)
+  weights = subset_array(weights, subset)
+  list(dataset = dataset, weights = weights, pheno = pheno)
+}
 ## ------------------------------------------------------------------------ ##
 ## run mixOmics:: and niapls::nipals on dataset with different NA proportions and records run times
 benchmark_nipals <-
@@ -86,7 +130,7 @@ benchmark_nipals <-
            props = c(0.1, 0.25, 0.4),
            ncomp = 2,
            center = TRUE,
-           scale = TRUE,
+           scale = FALSE,
            gramschmidt = FALSE,
            reconst = FALSE,
            repeat_runs = 1,

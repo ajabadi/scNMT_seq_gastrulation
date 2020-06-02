@@ -13,7 +13,7 @@ set_if_null <- function(null_arg=NULL, default_value) {
 suffix_colnames <- function(x, indices=1:2){
   for (j in indices) {
     suff <- names(x)[j]
-    colnames(x[[j]]) <- paste0(colnames(x[[j]]), suff)
+    colnames(x[[j]]) <- paste0(colnames(x[[j]]), '_' ,suff)
   }
   x
 }
@@ -104,15 +104,15 @@ create_keepX <- function(mae, keepX) {
 }
 
 ## ----------- subset MAE ----------- 
-# subset_mae <- function(mae, n=NULL, p=NULL, SEED=42) {
-#   for (i in seq_along(experiments(mae))) {
-#     feats <- min(dim( mae[[i]])[1], p)
-#     mae[[i]] <-  mae[[i]][seq_len(feats),]
-#   }
-#   n_cells <- dim(mae[[1]])[2]
-#   set.seed(SEED)
-#   mae[,sample(x = seq_len(n_cells), size = n),]
-# }
+subset_mae <- function(mae, n=NULL, p=NULL, SEED=42) {
+  for (i in seq_along(experiments(mae))) {
+    feats <- min(dim( mae[[i]])[1], p)
+    mae[[i]] <-  mae[[i]][seq_len(feats),]
+  }
+  n_cells <- dim(mae[[1]])[2]
+  set.seed(SEED)
+  mae[,sample(x = seq_len(n_cells), size = n),]
+}
 
 ## for subsetting the P x N data on local computer
 subset_pn <- function(mat, n=NULL, p=NULL) {

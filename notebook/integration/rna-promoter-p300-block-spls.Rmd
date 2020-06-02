@@ -29,7 +29,7 @@ source(here("src/source-utils.R"))
 
 ```{r}
 gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
-gastru.mae
+gastru.mae <- gastru.mae[,!is.na(gastru.mae$lineage10x_2),]
 ```
 
 

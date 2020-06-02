@@ -36,7 +36,7 @@ invisible(sapply(utls, source))
 
 ```{r, eval=params$on_hpc}
 ## install requirted packages if not installed
-installer(pkgs = c("data.table", "magrittr", "scater", "purrr", "parellel"))
+installer(pkgs = c("data.table", "magrittr", "scater", "purrr"))
 ```
 
 # Packages
@@ -119,7 +119,7 @@ length(unique(sample_metadata$sample)) ## sample size
 ### methylation
 
 ```{r}
-io$out$met_dt_list <- file.path(io$outdir, "met_dt_list_scaled_wt.rds")
+io$out$met_dt_list <- file.path(io$outdir, "met_dt_list.rds")
 ```
 
 ##### calculate site stats
@@ -163,7 +163,7 @@ saveRDS(met_dt_list, file = io$out$met_dt_list)
 ### accessibility
 
 ```{r}
-io$out$acc_dt_list <- file.path(io$outdir, "acc_dt_list-scaled_wt.rds")
+io$out$acc_dt_list <- file.path(io$outdir, "acc_dt_list.rds")
 ```
 
 ##### calculate site stats
@@ -195,21 +195,24 @@ create wide matrices for MAE
 ```{r}
 met_dt_list <- readRDS(io$out$met_dt_list)
 ```
+
+##### get rates
+
 ```{r dcast-met}
 ## 8 sec
 dcast_met <- dcast_dt_list(met_dt_list, row = "id", col = "id_met", value.var = "rate")
 ```
 
-## get weights
+##### get weights
 
 ```{r}
-## 8 sec
-dcast_met_scaled_wt <- dcast_dt_list(met_dt_list, row = "id", col = "id_met", value.var = "scaled_wt")
+dcast_met_wt <- dcast_dt_list(met_dt_list, row = "id", col = "id_met", value.var = "wij")
 ```
 
 
 ```{r}
 lapply(dcast_met, dim)
+lapply(dcast_met_wt, dim)
 ```
 
 
@@ -230,14 +233,16 @@ create wide matrices for MAE
 acc_dt_list <- readRDS(io$out$acc_dt_list)
 ```
 
+##### get rates
+
 ```{r dcast-acc}
 dcast_acc <- dcast_dt_list(acc_dt_list, row = "id", col = "id_acc", value.var = "rate")
 ```
 
-## get weights
+##### get weights
 
 ```{r}
-dcast_acc_scaled_wt <- dcast_dt_list(acc_dt_list, row = "id", col = "id_acc", value.var = "scaled_wt")
+dcast_acc_wt <- dcast_dt_list(acc_dt_list, row = "id", col = "id_acc", value.var = "wij")
 ```
 
 ```{r}
@@ -347,6 +352,11 @@ saveRDS(sce_matching, file = "easy-data/data/rna/parsed/SingleCellExperiment_mat
 ```
 
 
+```{r}
+sce_matching <- readRDS("/Users/alabadi/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/__Hackathon/easy-data/data/rna/parsed/SingleCellExperiment_matching-cells.rds")
+```
+
+
 # MultiAssayExperiment
 
 ## experimentlist
@@ -371,19 +381,19 @@ exper.list <- ExperimentList(rna = logcounts(sce_matching),
                              acc_DHS = dcast_acc$DHS,
                              
                              ## weights
-                             wt_met_genebody = dcast_met_scaled_wt$Genebody,
-                             wt_met_promoter = dcast_met_scaled_wt$Promoters,
-                             wt_met_cgi = dcast_met_scaled_wt$CGI,
-                             wt_met_p300 = dcast_met_scaled_wt$p300,
-                             wt_met_CTCF = dcast_met_scaled_wt$CTCF,
-                             wt_met_DHS = dcast_met_scaled_wt$DHS,
+                             wt_met_genebody = dcast_met_wt$Genebody,
+                             wt_met_promoter = dcast_met_wt$Promoters,
+                             wt_met_cgi = dcast_met_wt$CGI,
+                             wt_met_p300 = dcast_met_wt$p300,
+                             wt_met_CTCF = dcast_met_wt$CTCF,
+                             wt_met_DHS = dcast_met_wt$DHS,
 
-                             wt_acc_genebody = dcast_acc_scaled_wt$Genebody,
-                             wt_acc_promoter = dcast_acc_scaled_wt$Promoters,
-                             wt_acc_cgi = dcast_acc_scaled_wt$CGI,
-                             wt_acc_p300 = dcast_acc_scaled_wt$p300,
-                             wt_acc_CTCF = dcast_acc_scaled_wt$CTCF,
-                             wt_acc_DHS = dcast_acc_scaled_wt$DHS
+                             wt_acc_genebody = dcast_acc_wt$Genebody,
+                             wt_acc_promoter = dcast_acc_wt$Promoters,
+                             wt_acc_cgi = dcast_acc_wt$CGI,
+                             wt_acc_p300 = dcast_acc_wt$p300,
+                             wt_acc_CTCF = dcast_acc_wt$CTCF,
+                             wt_acc_DHS = dcast_acc_wt$DHS
 )
 ## check that all column names are identical
 all_identical(lapply(exper.list, colnames))
@@ -417,6 +427,10 @@ scnmtseq_gastrulation_mae <- MultiAssayExperiment(experiments = exper.list, colD
 
 ```{r save-mae}
 saveRDS(scnmtseq_gastrulation_mae, file= file.path(io$outdir, "scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds"))
+```
+
+```{r}
+scnmtseq_gastrulation_mae <- readRDS(file.path(io$outdir, "scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds"))
 ```
 
 

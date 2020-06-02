@@ -22,6 +22,15 @@ library(ggplot2)
 ```
 
 
+## utils
+
+```{r utls}
+## ----------- source utils ----------- 
+## list all R files in utils folder recursively
+utls <- list.files(file.path(io$home, "src/utils"), pattern = ".R", full.names = TRUE, recursive = TRUE)
+## source all
+invisible(sapply(utls, source))
+```
 
 # Data
 
@@ -130,6 +139,38 @@ get_empca_list <- function(mae, ncomp = 4) {
 empca_list <- get_empca_list(mae = gastru.mae, ncomp = params$nipals_ncomp)
 saveRDS(empca_list, file = here(sprintf("output/empca-list_ncomp-%s.rds", params$nipals_ncomp)))
 ```
+
+```{r}
+empca_list <- readRDS('../../output/empca_list.rds')
+pca_list <- readRDS('../../output/empca-vs-nipals-for-gastru-data_top-3000-features-unscaled.rds')
+```
+
+
+```{r}
+assay_name <- 'met_promoter'
+comps = c(1,2)
+cells_keep <- !is.na(gastru.mae$lineage10x_2) & ! (gastru.mae$lineage10x_2 %in% c("ExE_ectoderm"))
+
+pca_out <- pca_list$met_promoter$prop_NA_0$nipals_nipals
+empca_out <- empca_list[[assay_name]]
+df_pca <- data.frame(pca_out$scores[cells_keep,comps])
+df_empca <- data.frame(empca_out$scores[cells_keep,comps])
+coldata <- colData(gastru.mae)[cells_keep,]
+gg_pcs <- function(df_pca, comps, cells_keep, legend.title = 'Stage', col) {
+  ggplot(df_pca[cells_keep,], aes_string(paste0('PC', comps[1]), paste0('PC',comps[2]))) + geom_point(aes(col = col)) + guides(col=guide_legend(title = legend.title))
+}
+
+gg_pcs(df_pca = df_pca, comps = comps, cells_keep = cells_keep, legend.title = 'Lineage', col = gastru.mae$lineage10x_2[cells_keep])
+gg_pcs(df_pca = df_empca, comps = comps, cells_keep = cells_keep, legend.title = 'Lineage', col = gastru.mae$lineage10x_2[cells_keep])
+
+gg_sidebyside_dims(arr = df_pca, dims = c(1,2), coldata = coldata, axis = 'PC_')
+gg_sidebyside_dims(arr = df_empca, dims = c(1,2), coldata = coldata, axis = 'PC_')
+
+gg_pcs(df_pca = df_pca, comps = comps, cells_keep = cells_keep, legend.title = 'Stage', col = gastru.mae$day[cells_keep])
+gg_pcs(df_pca = df_empca, comps = comps, cells_keep = cells_keep, legend.title = 'Stage', col = gastru.mae$day[cells_keep])
+
+```
+
 
 ```{r, eval = params$on_mac}
 empca_list <- readRDS(here(sprintf("output/empca-list_ncomp-%s.rds", params$nipals_ncomp)))
