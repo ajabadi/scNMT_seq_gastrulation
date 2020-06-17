@@ -1,4 +1,0 @@
-.*
-__Hackathon
-data
-**/*_cache

@@ -1,281 +1,0 @@
-
-R version 3.5.0 (2018-04-23) -- "Joy in Playing"
-Copyright (C) 2018 The R Foundation for Statistical Computing
-Platform: x86_64-pc-linux-gnu (64-bit)
-
-R is free software and comes with ABSOLUTELY NO WARRANTY.
-You are welcome to redistribute it under certain conditions.
-Type 'license()' or 'licence()' for distribution details.
-
-  Natural language support but running in an English locale
-
-R is a collaborative project with many contributors.
-Type 'contributors()' for more information and
-'citation()' on how to cite R or R packages in publications.
-
-Type 'demo()' for some demos, 'help()' for on-line help, or
-'help.start()' for an HTML browser interface to help.
-Type 'q()' to quit R.
-
-> ## ---- function to set up libPaths()
-> setup_libPaths <- function(username = "alabadi", libpath = "~/R_libs") {
-+   if (Sys.info()["user"] != username) {
-+     .libPaths(libpath)
-+   }
-+   invisible(NULL)
-+ }
-> 
-> ## ----  main code
-> setup_libPaths()
-> 
-> library(here)
-here() starts at /data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation
-Warning message:
-package ‘here’ was built under R version 3.5.2 
-> # list.files(here("notebook"))
-> rmd_file <- here("notebook/imputation.Rmd")
-> ## source utilities
-> sapply(list.files(here('src/utils'), pattern = "*.R", full.names = TRUE), source)
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/helpers.R`
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/helpers.R`$value
-function (src, pattern, repl) 
-{
-    dest <- sub(pattern, repl, src)
-    if (!file.exists(dest)) {
-        dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-        file.copy(src, dest)
-    }
-}
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/helpers.R`$visible
-[1] FALSE
-
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/hpc_utils.R`
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/hpc_utils.R`$value
-function (object, file, force = FALSE, suffix = NULL, log = NULL, 
-    ...) 
-{
-    parent_base_ext <- function(filePath) {
-        file_dir <- dirname(filePath)
-        file_name <- tools::file_path_sans_ext(basename(filePath))
-        file_ext <- tools::file_ext(filePath)
-        return(list(parent = file_dir, base = file_name, ext = file_ext))
-    }
-    suffixer <- function(file, suffix) {
-        pl <- parent_base_ext(file)
-        pl$sfx <- suffix
-        with(pl, sprintf("%s/%s%s.%s", parent, base, sfx, ext))
-    }
-    file_sfx <- file
-    if (file.exists(file) & !force) {
-        if (!is(try(suffix), "character")) {
-            stop(sprintf("You sure you want to overwrite %s?. Use force=TRUE to overwrite.", 
-                sQuote2(file)), call. = FALSE)
-        }
-        else {
-            if (suffix == "auto") {
-                file_name <- tools::file_path_sans_ext(basename(file))
-                file_dir <- dirname(file)
-                nf <- length(list.files(path = file_dir, pattern = file_name))
-                file_sfx <- suffixer(file = file, suffix = sprintf("(%i)", 
-                  nf))
-            }
-            else {
-                file_sfx <- suffixer(file = file, suffix = suffix)
-            }
-        }
-    }
-    if (try(is(log, "character"))) {
-        logfile <- sprintf("%s/__log/%s.log", dirname(file), 
-            basename(file))
-        if (!file.exists(logfile)) {
-            if (!dir.exists(dirname(logfile))) {
-                dir.create(dirname(logfile))
-            }
-            file.create(logfile)
-            cat("initialise log on", date(), "\n\n", file = logfile)
-        }
-        cat(sprintf("%s: %s \n\n", basename(file_sfx), log), 
-            file = logfile, append = TRUE)
-    }
-    saveRDS(object = object, file = file_sfx, ...)
-}
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/hpc_utils.R`$visible
-[1] FALSE
-
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/load_data.R`
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/load_data.R`$value
-function (rna.id = opts$rna_cells, met.id = opts$met_cells, met.anno = opts$met.annos[1], 
-    acc.id = opts$acc.annos[1], acc.anno = met.anno, min.cpg = 5, 
-    min.gpc = 5, io = io) 
-{
-    ml2map <- function(dt) {
-        dt[, `:=`(rate, rate/100)]
-        dt[, `:=`(rate, (rate * N + 1)/(N + 2))]
-        dt
-    }
-    met_dt <- fread(cmd = sprintf("zcat < %s/%s.tsv.gz", io$met.dir, 
-        met.anno), stringsAsFactors = F, quote = "", showProgress = F) %>% 
-        setnames(c("id_met", "id", "anno", "Nmet", "N", "rate")) %>% 
-        ml2map()
-    acc_dt <- fread(cmd = sprintf("zcat < %s/%s.tsv.gz", io$acc.dir, 
-        acc.anno), stringsAsFactors = F, quote = "", showProgress = F) %>% 
-        setnames(c("id_acc", "id", "anno", "Nmet", "N", "rate")) %>% 
-        ml2map()
-    sce <- readRDS(io$rna.file)
-    sce <- sce[, colnames(sce) %in% rna.id]
-    sce <- sce[rowMeans(logcounts(sce)) >= 0.3, ]
-    met_dt <- met_dt[id_met %in% met.id] %>% setnames("rate", 
-        "value")
-    acc_dt <- acc_dt[id_acc %in% acc.id] %>% setnames("rate", 
-        "value")
-    met_dt <- met_dt[N >= min.cpg]
-    acc_dt <- acc_dt[N >= min.gpc]
-    return(list(met = met_dt, acc = acc_dt, rna = rna_dt))
-}
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/load_data.R`$visible
-[1] FALSE
-
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/rsync.R`
-NULL
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils-misc.R`
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils-misc.R`$value
-function (sce = NULL, n_genes = NULL, use_bio = TRUE) 
-{
-    require(scran)
-    fit <- trendVar(x = sce, use.spikes = FALSE)
-    sce <- decomposeVar(x = sce, fit = fit, use.spikes = FALSE)
-    gene_order <- ifelse(use_bio, order(-sce$bio), order(-sce$total))
-    if (is.null(n_genes)) {
-        n_genes <- dim(sce)[1]
-    }
-    keep_genes <- gene_order[seq_len(n_genes)]
-    sce <- sce[keep_genes, ]
-    return(sce)
-}
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils-misc.R`$visible
-[1] FALSE
-
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils.R`
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils.R`$value
-function (dt_list, row = "id", col = "id_met", value.var = "rate") 
-{
-    lapply(dt_list, function(w) {
-        dcast.data.table(w, as.formula(sprintf("%s~%s", row, 
-            col)), value.var = value.var) %>% data.frame(row.names = TRUE, 
-            check.names = FALSE) %>% .[lci_sorted_feats(w), ] %>% 
-            as.matrix()
-    })
-}
-
-$`/data/cephfs/punim0613/AL/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/src/utils/utils.R`$visible
-[1] FALSE
-
-
-> ## check/install/load packages
-> pkgs <- get_required_pkgs(rmd_file)
-> installer(pkgs = pkgs, hpc_libPaths = "~/R_libs", update_all = TRUE, reinstall = NULL)
-Loading required namespace: BiocManager
-
-unable to install:
-
-NONE
-successfully installed:
-
-NONE
-already installed:
-
-here, parallel, mixOmics, knitr, magrittr> load_pkgs(pkgs = pkgs)
-Warning message:
-package ‘knitr’ was built under R version 3.5.2 
-> ## render
-> rmarkdown::render(rmd_file, output_format = "html_document", params = list(
-+   times = 3
-+ ))
-
-
-processing file: imputation.Rmd
-  |                                                                              |                                                                      |   0%  |                                                                              |...                                                                   |   4%
-  ordinary text without R code
-
-  |                                                                              |......                                                                |   8%
-label: setup (with options) 
-List of 1
- $ include: logi FALSE
-
-  |                                                                              |........                                                              |  12%
-  ordinary text without R code
-
-  |                                                                              |...........                                                           |  16%
-label: unnamed-chunk-1
-  |                                                                              |..............                                                        |  20%
-  ordinary text without R code
-
-  |                                                                              |.................                                                     |  24%
-label: unnamed-chunk-2
-  |                                                                              |....................                                                  |  28%
-  ordinary text without R code
-
-  |                                                                              |......................                                                |  32%
-label: unnamed-chunk-3
-  |                                                                              |.........................                                             |  36%
-  ordinary text without R code
-
-  |                                                                              |............................                                          |  40%
-label: unnamed-chunk-4 (with options) 
-List of 2
- $ echo   : logi FALSE
- $ message: logi FALSE
-
-  |                                                                              |...............................                                       |  44%
-  ordinary text without R code
-
-  |                                                                              |..................................                                    |  48%
-label: unnamed-chunk-5
-  |                                                                              |....................................                                  |  52%
-  ordinary text without R code
-
-  |                                                                              |.......................................                               |  56%
-label: unnamed-chunk-6
-  |                                                                              |..........................................                            |  60%
-  ordinary text without R code
-
-  |                                                                              |.............................................                         |  64%
-label: unnamed-chunk-7
-  |                                                                              |................................................                      |  68%
-  ordinary text without R code
-
-  |                                                                              |..................................................                    |  72%
-label: unnamed-chunk-8
-  |                                                                              |.....................................................                 |  76%
-label: unnamed-chunk-9
-  |                                                                              |........................................................              |  80%
-label: unnamed-chunk-10
-  |                                                                              |...........................................................           |  84%
-  ordinary text without R code
-
-  |                                                                              |..............................................................        |  88%
-label: unnamed-chunk-11
-  |                                                                              |................................................................      |  92%
-  ordinary text without R code
-
-  |                                                                              |...................................................................   |  96%
-label: unnamed-chunk-12
-  |                                                                              |......................................................................| 100%
-  ordinary text without R code
-
-
-output file: imputation.knit.md
-
-/usr/local/easybuild/software/pandoc/2.5/bin/pandoc +RTS -K512m -RTS imputation.utf8.md --to html4 --from markdown+autolink_bare_uris+tex_math_single_backslash+smart --output imputation.html --email-obfuscation none --self-contained --standalone --section-divs --template /home/ajabadi/R_libs/rmarkdown/rmd/h/default.html --no-highlight --variable highlightjs=1 --variable 'theme:bootstrap' --include-in-header /tmp/RtmpL3wLJI/rmarkdown-str1491390a7a51.html --mathjax --variable 'mathjax-url:https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML' --lua-filter /home/ajabadi/R_libs/rmarkdown/rmd/lua/pagebreak.lua --lua-filter /home/ajabadi/R_libs/rmarkdown/rmd/lua/latex-div.lua 
-
-Output created: imputation.html
-> 

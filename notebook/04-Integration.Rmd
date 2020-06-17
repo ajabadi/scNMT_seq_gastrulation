@@ -1,0 +1,367 @@
+---
+title: "RNA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(mixOmics)
+library(here)
+library(ggplot2)
+library(knitr)
+library(microbenchmark)
+library(nipals)
+```
+
+```{r}
+## utils
+source(here("src/source-utils.R"))
+```
+
+# DNA
+
+## Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+keep_cells <- (gastru.mae$lineage10x_2 != 'ExE_ectoderm') & !is.na(gastru.mae$lineage10x_2)
+gastru.mae <- gastru.mae[, keep_cells,]  # MAE experiment
+```
+
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
+Match RNA feature names and the pathway features:
+
+```{r}
+rna <- assay(gastru.mae, 'rna')
+```
+
+```{r}
+all_genes <- sapply(experiments(gastru.mae), rownames) %>% unlist()
+all_genes <- all_genes[grepl(pattern = '^ENSMUSG', x = all_genes)]
+all_genes <- unique(all_genes)
+```
+
+```{r}
+library(biomaRt)
+
+ensembl <- useMart("ensembl", dataset="mmusculus_gene_ensembl")
+mouse_gene_ids  <- all_genes
+
+symbols <- getBM(attributes=c('ensembl_gene_id',
+                          'external_gene_name'),
+             filters = "ensembl_gene_id",
+             values = all_genes,
+             mart = ensembl)
+symbols <- data.frame(symbols, row.names = 1)
+save(symbols, file = 'rna-all-gene-symbols.RData')
+```
+
+```{r}
+load('savedata/rna-all-gene-symbols.RData')
+```
+
+```{r}
+rownames(rna) <- make.unique(symbols[rownames(rna),1])
+```
+
+```{r}
+lapply(experiments(gastru.mae), dim)
+# dput(names(experiments(gastru.mae)))
+c("rna", "met_genebody", "met_promoter", "met_cgi", "met_p300", 
+"met_CTCF", "met_DHS", "acc_genebody", "acc_promoter", "acc_cgi", 
+"acc_p300", "acc_CTCF", "acc_DHS")
+```
+
+Unsupervised - All Cells
+
+```{r, eval=FALSE}
+mmspls <- multimodal_analysis_wrapper(mae = gastru.mae, study_assays = NULL, ncomp = 3, scale = FALSE, design = 'null', lineages = NULL, stages = NULL, DA = NULL, keepX = NULL, save = FALSE)
+saveRDS(mmspls, file = 'savedata/MultiModalSparsePLS-All.rds')
+```
+
+Supervised - All Cells
+
+```{r, eval=FALSE}
+mmsplsda <- multimodal_analysis_wrapper(mae = gastru.mae, study_assays = names(experiments(gastru.mae))[2:13], ncomp = 3, scale = FALSE, design = 'null', lineages = NULL, stages = NULL, DA = 'stage_lineage', keepX = NULL, save = FALSE)
+saveRDS(mmsplsda, file = 'savedata/MultiModalSparsePLSDA-All.rds')
+```
+
+Unsupervised - E7.5
+
+```{r, eval=FALSE}
+mmspls_E7.5 <- multimodal_analysis_wrapper(mae = gastru.mae, study_assays = NULL, ncomp = 3, scale = FALSE, design = 'null', lineages = NULL, stages = "E7.5", DA = NULL, keepX = NULL, save = FALSE)
+saveRDS(mmspls_E7.5, file = 'savedata/MultiModalSparsePLS-E7.5.rds')
+```
+
+Supervised - E7.5
+
+```{r, eval=FALSE}
+mmsplsda_E7.5 <- multimodal_analysis_wrapper(mae = gastru.mae, study_assays = names(experiments(gastru.mae))[2:13], ncomp = 3, scale = FALSE, design = 'null', lineages = NULL, stages = "E7.5", DA = 'lineage10x_2', keepX = NULL, save = FALSE)
+saveRDS(mmsplsda_E7.5, file = 'savedata/MultiModalSparsePLSDA-E7.5.rds')
+```
+
+Read Data
+
+```{r}
+mmspls <- readRDS('savedata/MultiModalSparsePLS-All.rds')
+mmsplsda <- readRDS('savedata/MultiModalSparsePLSDA-All.rds')
+
+mmspls_E7.5 <- readRDS('savedata/MultiModalSparsePLS-E7.5.rds')
+mmsplsda_E7.5 <- readRDS('savedata/MultiModalSparsePLSDA-E7.5.rds')
+```
+
+
+```{r}
+# pl <- plotIndiv(pls_obj, pch = 16, comp = comp,group = coldata[rownames(pls_obj$X[[1]]),][,'stage_lineage'], legend = TRUE, legend.title = legend.title, size.subtitle = 10)
+# cols <- get_plotindiv_cols(pl)
+# dput(cols)
+
+col.per.lineage <- c(E5.5_Epiblast = "#004DFFFF", E5.5_Visceral_endoderm = "#018BFFFF", 
+E4.5_Epiblast = "#00008EFF", E4.5_Primitive_endoderm = "#000EFFFF", 
+E6.5_Primitive_Streak = "#C6FF39FF", E6.5_Epiblast = "#01C9FFFF", 
+E6.5_Visceral_endoderm = "#FFF900FF", E6.5_Mesoderm = "#49FEB6FF", 
+E7.5_Endoderm = "#FF7C00FF", E7.5_Epiblast = "#FF3D00FF", E7.5_Mesoderm = "#FC0000FF", 
+E7.5_Ectoderm = "#FFBA00FF", E7.5_Primitive_Streak = "#7F0000FF"
+)
+```
+
+
+```{r}
+plotIndiv_wrapper <- function(pls_obj, col = 'stage_lineage', legend.title = 'Stage_Lineage', comp = c(1,2), ...) {
+  plotIndiv(pls_obj, pch = 16, comp = comp,group = droplevels(coldata[rownames(pls_obj$X[[1]]),][,col]), legend = TRUE, legend.title = legend.title, size.subtitle = 10, cex=0.8, ...)
+}
+```
+
+Unsupervised - All Cells
+
+```{r}
+pl_mmspls <- plotIndiv_wrapper(mmspls, subtitle = names(mmspls$X))
+ggsave(filename = 'figures/plotIndiv-MultiModalSparsePLS-All.pdf', width = 12, height = 9)
+```
+
+Supervised - All Cells
+
+```{r}
+plotIndiv_wrapper(mmsplsda, subtitle = names(mmsplsda$X))
+ggsave(filename = 'figures/plotIndiv-MultiModalSparsePLSDA-All.pdf', width = 12, height = 9)
+```
+
+Unsupervised - E7.5
+
+```{r}
+plotIndiv_wrapper(mmspls_E7.5, subtitle = names(mmspls_E7.5$X))
+ggsave(filename = 'figures/plotIndiv-MultiModalSparsePLS-E7.5.pdf', width = 12, height = 9)
+```
+
+
+Supervised - E7.5
+
+
+```{r}
+plotIndiv_wrapper(mmsplsda_E7.5, subtitle = names(mmsplsda_E7.5$X))
+ggsave(filename = 'figures/plotIndiv-MultiModalSparsePLSDA-E7.5.pdf', width = 12, height = 9)
+```
+
+```{r, eval=FALSE}
+c("rna", "met_promoter", "acc_promoter", "acc_DHS")
+plotVar(mmspls, comp = c(1,2), blocks = c("rna", "met_promoter", "acc_promoter", "acc_DHS"), pch = c(16,17,18, 19), legend = TRUE, cutoff = 0.5)
+```
+
+```{r}
+obj <- mmspls
+```
+
+```{r}
+colgroup <- get_plotindiv_cols(pl_mmspls)
+block = 'rna'
+comp =1
+```
+
+```{r}
+sign = 'positive'
+feats <- boxplot_means(mae = gastru.mae, obj = obj, omic = 'rna', obj_block = 'Y' , x_lab = '', y_lab = 'Expression', by_pheno = 'stage_lineage', background = TRUE, sign = sign, colgroup = colgroup)
+feats$p
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('-rna-%s_Boxplots.pdf', sign)), width = 12, height = 6)
+
+sign = 'negative'
+feats <- boxplot_means(mae = gastru.mae, obj = obj, omic = 'rna', obj_block = 'Y' , x_lab = '', y_lab = 'Expression', by_pheno = 'stage_lineage', background = TRUE, sign = sign, colgroup = colgroup)
+feats$p
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('-rna-%s_Boxplots.pdf', sign)), width = 12, height = 6)
+```
+
+```{r}
+sign = 'positive'
+enrich.res <- do_encrichment2(obj = obj, comps = comp, block = block, sign =  sign)
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+negative
+
+
+```{r}
+sign = 'negative'
+enrich.res <- do_encrichment2(obj = obj, comps = comp, block = block, sign =  sign)
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+```{r}
+sign = 'all'
+enrich.res <- do_encrichment2(obj = obj, comps = comp, block = block, sign =  sign)
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-sign-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+PROMOTER
+
+```{r}
+block = 'met_promoter'
+comp = 1
+```
+
+```{r}
+sign = 'all'
+feats <- boxplot_means(mae = gastru.mae, obj = obj, omic = block, obj_block = block , x_lab = '', y_lab = 'Expression', by_pheno = 'stage_lineage', background = TRUE, sign = sign, colgroup = colgroup)
+
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('-met_promoter-%s_Boxplots.pdf', sign)), width = 12, height = 6)
+```
+
+```{r}
+sign = 'positive'
+enrich.res <- do_encrichment2(obj = obj, comps = comp, block = block, sign =  sign)
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+
+GENEBODY
+
+```{r}
+block = 'met_genebody'
+comp =1
+```
+
+```{r}
+sign = 'all'
+feats <- boxplot_means(mae = gastru.mae, obj = obj, omic = block, obj_block = block , x_lab = '', y_lab = 'Expression', by_pheno = 'stage_lineage', background = TRUE, sign = sign, colgroup = colgroup)
+feats$p
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('-rna-%s_Boxplots.pdf', sign)), width = 12, height = 6)
+```
+
+```{r}
+sign = 'positive'
+enrich.res <- do_encrichment2(obj = obj, comps = comp, block = block, sign =  sign)
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+```{r}
+# plot_enrichment_heatmap(enrichment.parametric)
+# 
+
+plot_enrichment(enrich.res, 
+                factor = comp, 
+                max.pathways = 15
+)
+ggsave(filename = gsub(file_NAME, pattern = '.rds', replacement = sprintf('__GSEA-%s-comp-%s-sign-%s.pdf', block, comp, sign)), width = 10, height = 5)
+# 
+# plot_enrichment_detailed(enrichment.parametric, 
+#                          factor = 1, 
+#                          max.genes = 8, 
+#                          max.pathways = 5
+# )
+
+```
+
+
+
+

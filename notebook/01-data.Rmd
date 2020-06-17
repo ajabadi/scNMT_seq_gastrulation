@@ -1,0 +1,173 @@
+---
+title: "Data"
+author: "Al J Abadi"
+params:
+  on_hpc: !r Sys.info()['user'] != 'alabadi'
+  on_mac: !r Sys.info()['user'] == 'alabadi'
+output:
+  html_document:
+    toc: true
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(here)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(data.table)
+```
+
+
+```{r utls}
+## utils
+source(here("src/source-utils.R"))
+```
+
+# Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+keep_cells <- (gastru.mae$lineage10x_2 != 'ExE_ectoderm') & !is.na(gastru.mae$lineage10x_2)
+gastru.mae <- gastru.mae[, keep_cells,]  # MAE experiment
+```
+
+check column names are consistent:
+
+```{r}
+all_identical(colnames(gastru.mae))
+```
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
+```{r}
+library(kableExtra)
+dt <- table(coldata$lineage10x_2, coldata$stage)
+dt
+kb <- dt %>% kable() %>% kable_styling(bootstrap_options = c("striped"), font_size = 38)
+save_kable(kb, file = 'figures/cell-breakdown.pdf')
+```
+
+## Covergae
+
+Check the feature detection rate across modalities:
+
+```{r}
+modalities <- names(gastru.mae)
+## drop weight assays
+modalities <- modalities[grepl(pattern = '^acc', modalities) | grepl(pattern = '^met', modalities)]
+coverages <- lapply(named_list(modalities), function(assay_name) {
+  mat <- assay(gastru.mae, assay_name)
+  NAs <- rowSums(!is.na(mat))/dim(mat)[2]*100
+  data.frame(pct_NAs=NAs)
+})
+
+coverages <- rbindListWithNames(coverages)
+dput(unique(coverages$dataset))
+coverages$dataset <- factor(coverages$dataset, levels = unique(coverages$dataset), ordered = TRUE)
+```
+
+```{r}
+p <- ggplot(coverages, aes(x = pct_NAs)) + geom_density(fill = 'lightblue', show.legend = FALSE) + 
+  geom_vline(aes(xintercept=mean(pct_NAs)),
+             color="blue", linetype="dashed", size=0.5) +
+  labs(x = '% of cells detecting the feature') + facet_wrap(.~dataset, nrow = 2) + 
+  theme_bw() + theme(strip.text.x = element_text(size = 10, face = 'bold'))
+
+# p
+```
+
+```{r, echo=FALSE}
+ggsave(filename = 'figures/covplots.pdf', width = 8, height = 4)
+```
+
+```{r, echo=FALSE}
+include_graphics('figures/covplots.pdf')
+```
+
+Check the feature detection rate across stages:
+
+```{r}
+get_coverge_by_pheno <- function(mae, assay_name, pheno) {
+  coldata_dt <- data.table(data.frame(colData(mae)), keep.rownames = 'cell')
+  mat <- assay(mae, assay_name)
+  mat <- reshape2::melt(mat) %>% set_names(c('feature', 'cell', 'value')) 
+  mat <- data.table(mat)
+  mat <- merge.data.table(x = mat, y = coldata_dt[,c('cell', pheno), with=F], by = 'cell')
+  mat <- mat[, .(detection = sum(!is.na(value))/.N), by = c('feature', pheno)]
+  mat <- setnames(mat, old = pheno, new = 'pheno')
+  data.frame(mat)
+}
+
+ggplot_coverage_by_pheno <- function(mae, assay_name, pheno, nrow = 2, show.mean = TRUE) {
+  df <- get_coverge_by_pheno(mae = mae, assay_name = assay_name, pheno = pheno)
+  p <- ggplot(df, aes(x = detection)) + geom_density(fill = 'lightblue', show.legend = FALSE) + 
+    labs(x = 'proportion of cells detecting the feature') + facet_wrap(.~pheno, nrow = nrow) + 
+    theme_bw() + theme(strip.text.x = element_text(size = 10, face = 'bold'))
+  
+  if (show.mean) {
+    p <- p + geom_vline(aes(xintercept=mean(detection)),
+               color="blue", linetype="dashed", size=0.5)
+  }
+  p
+}
+```
+
+```{r}
+assay_names <- c('met_promoter', 'acc_promoter', 'met_CTCF', 'acc_CTCF')
+cov_by_stage_plots <- lapply(named_list(assay_names), function(z) {
+  ggplot_coverage_by_pheno(mae = gastru.mae, assay_name = z, pheno = 'stage', nrow = 1, show.mean = TRUE)
+})
+```
+
+```{r}
+library(egg)
+ggarrange(plots = cov_by_stage_plots, nrow = 2, labels = assay_names)
+```
+
+E4.5 has less coverage on average.
+
+## Dimensions
+
+```{r}
+views <- c('rna', 'met', 'acc')
+
+views = paste0('^', views)
+modalities <- sapply(names(gastru.mae), function(assay_name) {
+  any(sapply(views, function(mode) {
+    grepl(mode, assay_name)
+  }))
+})
+
+dims <- lapply(experiments(gastru.mae[,,modalities]), dim)
+
+df <- t(data.frame(dims))
+df
+colnames(df) <- c('P', 'N')
+kb <- df%>% kable() %>% kable_styling(bootstrap_options = c("striped"), font_size = 42)
+kb
+
+save_kable(kb, file = 'figures/dimensions.pdf')
+```
+
+## Heatmap Visuals
+
+```{r}
+create_heatmap(1/t(sqrt(assay(gastru.mae, 'wt_met_promoter')))[1:50, 1:400], legend.title = '        ', NA_color = 'white')
+ggsave("figures/promoter-snapshot-SE.pdf", width = 8, height = 8)
+create_heatmap(t(assay(gastru.mae, 'met_promoter'))[1:50, 1:400], legend.title = '        ', NA_color = 'white')
+ggsave("figures/promoter-snapshot-rates.pdf", width = 8, height = 8)
+```
+```{r, echo=FALSE}
+# library(egg)
+# p1 <- create_heatmap(sqrt(1/sqrt(assay(gastru.mae, 'wt_met_promoter')))[1:50, 1:400], legend.title = 'SE of point estimates', NA_color = 'white') + theme(plot.margin = unit(c(1,1,1,1), "cm"))
+# p2 <- create_heatmap(assay(gastru.mae, 'met_promoter')[1:50, 1:400], legend.title = 'Promoter methylation', NA_color = 'white') + theme(plot.margin = unit(c(1,1,1,1), "cm"))
+# pdf('figures/heatmaps-promoter.pdf', width = 8, height = 12)
+# ggarrange(p1, ggplot()+theme_void() ,p2, ncol = 1)
+# dev.off()
+```
+
+
+

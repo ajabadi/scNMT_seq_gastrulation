@@ -1,0 +1,207 @@
+---
+title: "RNA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(here)
+library(ggplot2)
+library(knitr)
+library(microbenchmark)
+library(nipals)
+```
+
+```{r}
+## utils
+source(here("src/source-utils.R"))
+```
+
+# DNA
+
+## Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+keep_cells <- (gastru.mae$lineage10x_2 != 'ExE_ectoderm') & !is.na(gastru.mae$lineage10x_2)
+gastru.mae <- gastru.mae[, keep_cells,]  # MAE experiment
+```
+
+
+### NIPALS vs Weighted EMPCA runtimes
+
+```{r}
+met_promoter <- t(assay(gastru.mae, 'met_promoter'))
+wt_met_promoter <- t(assay(gastru.mae, 'wt_met_promoter'))
+```
+
+
+```{r}
+microbenchmark_nipals <- function(value_mat, wt_mat, subset, times = 3L) {
+  value_mat <- subset_pn(value_mat, n = subset[1], p = subset[2])
+  wt_mat <- subset_pn(wt_mat, n = subset[1], p = subset[2])
+  
+  
+  mb <- microbenchmark(
+    nipals = nipals::nipals(value_mat, ncomp = 2, center = TRUE, scale = TRUE, fitted = FALSE, force.na = TRUE, gramschmidt = FALSE, verbose = FALSE, maxiter = 500, tol = 1e-8),
+    empca = nipals::empca(value_mat, w = wt_mat, ncomp = 2, center = TRUE, scale = TRUE, fitted = FALSE, gramschmidt = FALSE, verbose = FALSE, maxiter = 500, tol = 1e-8),
+    times = times, unit = 's'
+  )
+  
+  mb_df <- summary(mb)[1:7] %>% data.frame(row.names = 1) 
+  mb_df$algo = rownames(mb_df)
+  mb_df$P <- subset[2]
+  mb_df$N <- subset[1]
+  mb_df
+  
+}
+
+```
+
+```{r}
+## test
+microbenchmark_nipals(value_mat = met_promoter, wt_mat = wt_met_promoter, subset = c(20, 40), times = 3L)
+```
+```{r}
+mb_results <- list()
+ns <- c(815)
+ps <- c(100, 200, 400, 800)
+mb_results <- list()
+
+for (n in ns) {
+  for (p in ps) {
+    mb_results[[sprintf("N%sP%s",n,p)]] <- microbenchmark_nipals(value_mat = met_promoter, wt_mat = wt_met_promoter, subset = c(n, p), times = 3L)
+    
+  }
+}
+saveRDS(mb_results, file = 'savedata/mb_results.rds')
+```
+
+
+```{r}
+apply_nipals_assay <- function(mae, assay_type, subset = c(1e5, 1000)) {
+  dna_assay <- t(assay(mae, assay_type))
+  dna_assay <- subset_pn(dna_assay, n = subset[1], p = subset[2])
+  dna_assay_wt <- t(assay(mae, paste0('wt_',assay_type)))
+  dna_assay_wt <- subset_pn(dna_assay_wt, n = subset[1], p = subset[2])
+  
+  nipals = nipals::nipals(dna_assay, ncomp = 2, center = TRUE, scale = TRUE, fitted = FALSE, force.na = TRUE, gramschmidt = FALSE, verbose = FALSE, maxiter = 500, tol = 1e-8)
+    empca = nipals::empca(dna_assay, w = dna_assay_wt, ncomp = 2, center = TRUE, scale = TRUE, fitted = FALSE, gramschmidt = FALSE, verbose = FALSE, maxiter = 500, tol = 1e-8)
+    return(list(nipals = nipals, empca = empca))
+}
+
+apply_nipals <- function(mae, assays, subset = c(1e5, 1000) ) {
+  lapply(named_list(assays), function(z) {
+    res <- apply_nipals_assay(mae = mae, assay_type = z, subset = subset)
+    saveRDS(res, file = sprintf('savedata/%s-%s.rds', z, paste0(subset, collapse = '-')))
+    res
+  })
+}
+
+nipals_assays <- c("met_genebody", "met_promoter", "acc_p300", 
+"acc_CTCF", "acc_DHS", "acc_promoter")
+nipals_all <- apply_nipals(mae = gastru.mae, assays = nipals_assays, subset = c(1e4, 1000))
+saveRDS(nipals_all, file = 'savedata/nipals-all.rds')
+```
+
+```{r}
+mb_results <- readRDS('savedata/mb_results.rds')
+```
+
+```{r}
+nipals_all <- readRDS('savedata/nipals-all.rds')
+```
+
+```{r}
+mb_results <- rbindListWithNames(mb_results)
+```
+
+```{r}
+ggplot(mb_results , aes(x = P, y = mean, col = algo)) +
+    geom_errorbar(aes(ymin=lq, ymax=uq), width=0.1) +
+    geom_line() +
+    geom_point()
+```
+
+```{r}
+assay_type <- 'met_promoter'
+
+pca_res <- nipals_all[[assay_type]]
+col.values = c("#ADD8E6", "#7390C7", "#3948A9", "#00008B")
+
+ggplot_pcs <- function(scores, col, legend.title, col.values = NULL, ...) {
+  scores <- data.frame(scores)
+  scores <- scores[rownames(colData(gastru.mae)),]
+  scores$col <- col
+  p <- ggplot(scores , aes(x = PC1, y = PC2, col = col)) + 
+    geom_point() + theme_bw() +
+    guides(col = guide_legend(title = legend.title)) +
+    labs(...)
+    
+    if (!is.null(col.values)) {
+      p <- p + scale_color_manual(values = col.values)
+    }
+    p
+}
+```
+
+```{r}
+set.seed(42)
+nstage <- length(unique(gastru.mae$stage))
+nlineage <- length(unique(gastru.mae$lineage10x_2))
+ntotal <- nstage + nlineage
+col_pallete <- sample(gg_color_hue(n=ntotal), size = ntotal)
+
+stage_cols <- col_pallete[seq_len(nstage)]
+lineage_cols <- col_pallete[-seq_len(nstage)]
+```
+
+
+
+```{r}
+p1 <- ggplot_pcs(scores = nipals_all$met_promoter$nipals$scores, col = gastru.mae$stage, legend.title = 'Stage', col.values = stage_cols)
+p2 <- ggplot_pcs(scores = nipals_all$met_promoter$empca$scores, col = gastru.mae$stage, legend.title = 'Stage', col.values = stage_cols)
+p3 <- ggplot_pcs(scores = nipals_all$met_promoter$nipals$scores, col = gastru.mae$lineage10x_2, legend.title = 'Lineage', col.values = lineage_cols)
+p4 <- ggplot_pcs(scores = nipals_all$met_promoter$empca$scores, col = gastru.mae$lineage10x_2, legend.title = 'Lineage', col.values = lineage_cols)
+library(egg)
+ggarrange(p1, p2, p3, p4)
+```
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+nipals_scores <- lapply(named_list(names(nipals_all)), function(x) {
+  df <- data.frame(nipals_all[[x]]$nipals$scores)
+  df <- df[rownames(coldata),]
+  df <- cbind(df, coldata)
+  df
+})
+
+nipals_scores <- rbindListWithNames(nipals_scores, new_col = 'assay')
+                                   
+empca_scores <- lapply(named_list(names(nipals_all)), function(x) {
+  df <- data.frame(nipals_all[[x]]$empca$scores)
+  df <- df[rownames(coldata),]
+  df <- cbind(df, coldata)
+  df
+})
+
+empca_scores <- rbindListWithNames(empca_scores, new_col = 'assay')
+```
+
+```{r}
+# ggplot(empca_scores, aes(PC1, PC2)) + geom_point(aes(col = stage), alpha = 0.7) + facet_wrap(.~assay)
+# ggplot(nipals_scores, aes(PC1, PC2)) + geom_point(aes(col = lineage10x_2), alpha = 0.7) + facet_wrap(.~assay)
+ggplot(nipals_scores, aes(PC1, PC2)) + geom_point(aes(col = stage), alpha = 0.7) + facet_wrap(.~assay)  + theme_classic() +
+  theme(strip.text.x = element_text(size = 10, face = 'bold'))
+ggsave(filename = 'figures/nipals-assays.pdf', width = 10, height = 7)
+```
+
+
+
+
+
+

@@ -1,0 +1,94 @@
+---
+title: "RNA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(MultiAssayExperiment)
+library(here)
+library(ggplot2)
+library(knitr)
+library(umap)
+library(reticulate)
+```
+
+```{r}
+## utils
+source(here("src/source-utils.R"))
+```
+
+
+# RNA
+
+## Data
+
+```{r}
+gastru.mae <- readRDS(here('output/scnmtseq_gastrulation_mae_826-cells_orderedFeatures.rds'))  # MAE experiment
+keep_cells <- (gastru.mae$lineage10x_2 != 'ExE_ectoderm') & !is.na(gastru.mae$lineage10x_2)
+gastru.mae <- gastru.mae[, keep_cells,]  # MAE experiment
+```
+
+```{r}
+coldata <- data.frame(colData(gastru.mae))
+```
+
+```{r}
+rna <- assay(gastru.mae, 'rna')
+```
+
+
+## UMAP
+
+
+```{r}
+ncomp <- 10
+filename <- sprintf('savedata/umap-result-ncomp-%s.rds', ncomp)
+```
+
+```{r, eval=FALSE}
+set.seed(42)
+umap_rna_unsup <- umap::umap(t(rna), method = 'umap-learn', n_components = ncomp, metric = 'euclidean', knn_repeats = 3, min_dist = 0.7)
+```
+
+```{r, eval=FALSE}
+saveRDS(umap_rna_unsup, file = filename)
+```
+
+```{r}
+umap_rna_unsup <- readRDS(filename)
+```
+
+```{r}
+df <- data.frame(umap_rna_unsup$layout)[rownames(coldata),]
+colnames(df) <- paste0('UMAP_', seq_along(df))
+df <- cbind(df, coldata)
+
+set.seed(42)
+nstage <- length(unique(gastru.mae$stage))
+nlineage <- length(unique(gastru.mae$lineage10x_2))
+ntotal <- nstage + nlineage
+col_pallete <- gg_color_hue(n=ntotal)
+ind.stage <- 2*seq_len(nstage)
+stage_cols <- col_pallete[ind.stage]
+lineage_cols <- col_pallete[-ind.stage]
+ggplot(df, aes(UMAP_3, UMAP_4)) + geom_point(aes(col=lineage10x_2), show.legend = FALSE) + theme_classic() + scale_color_manual(values = lineage_cols)
+ggsave('figures/umap-rna-lineage-nolegend.pdf', width = 5, height = 5)
+ggplot(df, aes(UMAP_3, UMAP_4)) + geom_point(aes(col=lineage10x_2)) + theme_classic() + scale_color_manual(values = lineage_cols)
+ggsave('figures/umap-rna-lineage-legend.pdf', width = 5, height = 5)
+ggplot(df, aes(UMAP_3, UMAP_4)) + geom_point(aes(col=stage),  show.legend = FALSE) + theme_classic()+ scale_color_manual(values = stage_cols)
+ggsave('figures/umap-rna-stage-nolegend.pdf', width = 5, height = 5)
+ggplot(df, aes(UMAP_3, UMAP_4)) + geom_point(aes(col=stage)) + theme_classic()+ scale_color_manual(values = stage_cols)
+ggsave('figures/umap-rna-stage-legend.pdf', width = 5, height = 5)
+```
+
+
+```{r}
+p34 <- gg_sidebyside_dims(arr =  umap_rna_unsup$layout, dims = c(3,4), coldata = coldata)
+ggsave(plot = p34, filename = 'figures/rna-umap-34.pdf', width = 12, height = 5)
+```
+
+

@@ -45,6 +45,7 @@ run_enrichment2 <-
   #   W <- W[!idx, ]
   # }
   features <- intersect(colnames(data), colnames(feature.sets))
+  
   if (length(features) == 0)
     stop("Feature names in feature.sets do not match feature names in model.")
   # message(sprintf("Intersecting features names in the model and the gene set annotation results in a total of %d features.", 
@@ -160,4 +161,71 @@ run_enrichment2_diablo <- function(diablo_obj,block, comps, ...) {
   )
   
   
+}
+
+
+## ------------------------------------------------------------------------ ##
+do_encrichment2 <- function(obj, comps, block, sign = 'all', feature_set = c("MSigDB_v6.0_C2_mouse", "MSigDB_v6.0_C5_mouse")) {
+  library(MOFAdata)
+  
+  feature_set <- match.arg(feature_set)
+  # C2: curated gene sets from online pathway databases, publications in PubMed, and knowledge of domain experts.
+  if (! feature_set %in% ls()) {
+    data(list = feature_set)
+  }
+  
+  
+  if (! 'symbols' %in% ls()) {
+    load('/Users/alabadi/Projects/analysis/R/multiOmics/scNMT_seq_gatrulation/notebook/integration/block-spls/rna-all-gene-symbols.RData')
+  }
+  
+  # C5: extracted from the Gene Ontology data.base
+  ensemble2symbol <- symbols
+  
+  # block.spls.res <- readRDS(here("output/block.spls.res.rds"))
+  
+  
+  
+  data <- obj$X
+  
+  data <- lapply(data, function(arr) {
+    colnames(arr) <- stringr::str_extract(colnames(arr), pattern = '^ENSMUSG[0-9]+')
+    colnames(arr) <- toupper(ensemble2symbol[colnames(arr),])
+    arr
+  } )
+  
+  Z <- obj$variates
+  Z <- lapply(Z, function(arr) {
+    colnames(arr) <- paste0('factor', seq_len(ncol(arr)))
+    arr
+  } )
+  
+  W <- obj$loadings
+  W <- lapply(W, function(arr) {
+    colnames(arr) <- paste0('factor', seq_len(ncol(arr)))
+    rownames(arr) <- stringr::str_extract(rownames(arr), pattern = '^ENSMUSG[0-9]+')
+    rownames(arr) <- toupper(ensemble2symbol[rownames(arr),])
+    arr
+  } )
+  
+  # Z <- Z[[block]]
+  # W <- W[[block]]
+  
+  # mymofa <- new('MOFA',
+  # data = data,
+  # expectations = list(W= W, Z= Z),
+  # data_options = list(views = names(data)),
+  # 
+  #     )
+  # debugonce(MOFA2:::.pcgse)
+  enrichment.parametric <- run_enrichment2(data = data[[block]],
+                                           Z = Z[[block]],
+                                           W = W[[block]],
+                                           factors = comps,
+                                           feature.sets = MSigDB_v6.0_C5_mouse,
+                                           sign = sign,
+                                           statistical.test = "parametric"
+  )
+  
+  enrichment.parametric
 }

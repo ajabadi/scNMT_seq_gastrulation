@@ -101,51 +101,63 @@ gg_sidebyside_dims <- function(arr, dims, coldata, ...) {
   gg_sidebyside(g1, g2)
 }
 ## ------------------------------------------------------------------------ ##
-boxplot_means <-
-  function(X, ## block.spls.res$X[[omic]]
-           coldata, ## data.frame(colData(study_mae))
-           selected_features,  ## selectVar(block.spls.res)[[omic]]$value
-           by_pheno = 'stage', ## colnames(coldata)[i]
-           x_lab,
-           y_lab,
-           sign = c('all', 'positive', 'negative'))
-  {
-    require(data.table)
-    sign <- match.arg(sign)
-    selected_features <- data.table(selected_features, keep.rownames = 'feature')
-    
-    if (sign != 'all') {
-      if (sign == 'positive') {
-        selected_features <- selected_features[value.var > 0]
-      } else {
-        selected_features <- selected_features[value.var < 0]
-      }
-    }
-    
-    if (dim(selected_features)[1] < 3) {
-      stop("not many feature weights with the given sign")
-    }
-    
-    
-    selected_features <- selected_features$feature
-    
-    coldata_dt <- data.table(coldata, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
-    
-    dt <- data.table(X, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
-    dt <- melt.data.table(dt, variable.name = "feature", value.name = "rate")
-    dt <- data.table::merge.data.table(dt, coldata_dt)
-    dt <- dt[,.(mean_rate = mean(rate, na.rm=TRUE)), by = c(by_pheno, "feature")]
-    dt[, selected := FALSE]
-    
-    
-    dt[feature %in% selected_features, selected := TRUE]
-    ggplot(data = dt[selected==TRUE], aes_string(x = by_pheno, y = 'mean_rate', fill = by_pheno))  + geom_boxplot(data = dt, aes_string(x = by_pheno, y = 'mean_rate'),  fill = 'grey70', alpha = 0.6, outlier.shape = NA, coef= 0) +  geom_violin(alpha = 0.6)  +  geom_boxplot(alpha = 0.6)  + 
-      # geom_jitter(width = 0.4, height = 0) +
-      labs(x = x_lab, y = y_lab)  +  theme_bw() 
-  }
+# boxplot_means <-
+#   function(X, ## block.spls.res$X[[omic]]
+#            coldata, ## data.frame(colData(study_mae))
+#            selected_features,  ## selectVar(block.spls.res)[[omic]]$value
+#            by_pheno = 'stage', ## colnames(coldata)[i]
+#            x_lab,
+#            y_lab,
+#            sign = c('all', 'positive', 'negative'))
+#   {
+#     require(data.table)
+#     sign <- match.arg(sign)
+#     selected_features <- data.table(selected_features, keep.rownames = 'feature')
+#     
+#     if (sign != 'all') {
+#       if (sign == 'positive') {
+#         selected_features <- selected_features[value.var > 0]
+#       } else {
+#         selected_features <- selected_features[value.var < 0]
+#       }
+#     }
+#     
+#     if (dim(selected_features)[1] < 3) {
+#       stop("not many feature weights with the given sign")
+#     }
+#     
+#     
+#     selected_features <- selected_features$feature
+#     
+#     coldata_dt <- data.table(coldata, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
+#     
+#     dt <- data.table(X, keep.rownames = "cell", check.names = FALSE, stringsAsFactors = FALSE)
+#     dt <- melt.data.table(dt, variable.name = "feature", value.name = "rate")
+#     dt <- data.table::merge.data.table(dt, coldata_dt)
+#     dt <- dt[,.(mean_rate = mean(rate, na.rm=TRUE)), by = c(by_pheno, "feature")]
+#     dt[, selected := FALSE]
+#     
+#     
+#     dt[feature %in% selected_features, selected := TRUE]
+#     ggplot(data = dt[selected==TRUE], aes_string(x = by_pheno, y = 'mean_rate', fill = by_pheno))  + geom_boxplot(data = dt, aes_string(x = by_pheno, y = 'mean_rate'),  fill = 'grey70', alpha = 0.6, outlier.shape = NA, coef= 0) +  geom_violin(alpha = 0.6)  +  geom_boxplot(alpha = 0.6)  + 
+#       # geom_jitter(width = 0.4, height = 0) +
+#       labs(x = x_lab, y = y_lab)  +  theme_bw() 
+#   }
 ## ------------------------------------------------------------------------ ##
 boxplot_means_diablo <- function(diablo_obj, omic, comp = 1, coldata, by_pheno, x_lab, y_lab, sign) {
   X <- diablo_obj$X[[omic]]
   selected_features <- selectVar(diablo_obj, comp = comp, block = omic)[[1]]$value
   boxplot_means(X = X, coldata = coldata, selected_features = selected_features, by_pheno = by_pheno, x_lab = x_lab, y_lab = y_lab, sign = sign)
 }
+## ------------------------------------------------------------------------ ##
+gg_sidebyside <- function(p1, p2) {
+  library(egg)
+  egg::ggarrange(plots = list(p1, ggplot() + theme_void(), p2), nrow = 1, widths = c(5,1,5))
+}
+
+gg_sidebyside_dims <- function(arr, dims, coldata) {
+  g1 <- ggplot_redDim(arr, col = coldata$stage, dims = dims, grad_cols = c('#37a6f0', '#121296'))
+  g2 <- ggplot_redDim(arr, col = coldata$lineage10x_2, dims = dims, grad_cols = NULL, col.legend = 'Lineage')
+  gg_sidebyside(g1, g2)
+}
+## ------------------------------------------------------------------------ ##

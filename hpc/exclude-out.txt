@@ -1,5 +1,0 @@
-.*
-hpc/rsync/*
-__Hackathon
-data
-**/*_cache

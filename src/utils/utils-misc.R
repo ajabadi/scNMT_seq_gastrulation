@@ -116,6 +116,7 @@ subset_mae <- function(mae, n=NULL, p=NULL, SEED=42) {
 
 ## for subsetting the P x N data on local computer
 subset_pn <- function(mat, n=NULL, p=NULL) {
+  `%||%` <- purrr::`%||%`
   p <- p %||% dim(mat)[2]
   n <- n %||% dim(mat)[1]
   
