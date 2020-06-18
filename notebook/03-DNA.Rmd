@@ -34,6 +34,11 @@ gastru.mae <- gastru.mae[, keep_cells,]  # MAE experiment
 
 ### NIPALS vs Weighted EMPCA runtimes
 
+**Clarification**
+
+The presentation showed the results for NIPLAS without weights while it was meant to convey that it is possible to do weighted analysis as well. The weighted algorithm is stochastic (and slow!) and can converge to a local minima at times.
+We did see some improvements at times and this behaviour is something that needs to be further characterised.
+
 ```{r}
 met_promoter <- t(assay(gastru.mae, 'met_promoter'))
 wt_met_promoter <- t(assay(gastru.mae, 'wt_met_promoter'))
@@ -66,6 +71,7 @@ microbenchmark_nipals <- function(value_mat, wt_mat, subset, times = 3L) {
 ## test
 microbenchmark_nipals(value_mat = met_promoter, wt_mat = wt_met_promoter, subset = c(20, 40), times = 3L)
 ```
+
 ```{r}
 mb_results <- list()
 ns <- c(815)

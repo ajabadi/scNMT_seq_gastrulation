@@ -160,6 +160,7 @@ ggsave("figures/promoter-snapshot-SE.pdf", width = 8, height = 8)
 create_heatmap(t(assay(gastru.mae, 'met_promoter'))[1:50, 1:400], legend.title = '        ', NA_color = 'white')
 ggsave("figures/promoter-snapshot-rates.pdf", width = 8, height = 8)
 ```
+
 ```{r, echo=FALSE}
 # library(egg)
 # p1 <- create_heatmap(sqrt(1/sqrt(assay(gastru.mae, 'wt_met_promoter')))[1:50, 1:400], legend.title = 'SE of point estimates', NA_color = 'white') + theme(plot.margin = unit(c(1,1,1,1), "cm"))
